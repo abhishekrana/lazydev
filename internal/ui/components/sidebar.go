@@ -90,6 +90,11 @@ func (s *Sidebar) SetItems(containers []messages.Container) {
 	if s.cursor >= len(s.rows) {
 		s.cursor = max(0, len(s.rows)-1)
 	}
+
+	// If cursor is on a group header, move to first item.
+	if s.cursor < len(s.rows) && s.rows[s.cursor].isGroup && s.cursor+1 < len(s.rows) {
+		s.cursor = s.cursor + 1
+	}
 }
 
 // rebuildRows flattens groups + items into display rows respecting collapsed state.

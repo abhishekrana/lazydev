@@ -156,7 +156,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case messages.LogBatchMsg, messages.ContainerListMsg, messages.ResourceStatsMsg,
 		messages.ContainerActionMsg, messages.ContainerInspectMsg,
-		messages.LogStreamErrorMsg, messages.ExecFinishedMsg, messages.ScaleMsg:
+		messages.LogStreamErrorMsg, messages.ExecFinishedMsg, messages.ScaleMsg,
+		messages.LogExportedMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
 			var cmd tea.Cmd
