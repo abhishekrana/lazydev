@@ -488,7 +488,7 @@ func (l LogView) scrollbarChar(row, thumbStart, thumbEnd int) string {
 	if row >= thumbStart && row < thumbEnd {
 		return theme.ScrollbarThumbStyle.Render("┃")
 	}
-	return theme.ScrollbarTrackStyle.Render("│")
+	return " "
 }
 
 func (l LogView) renderStatusLine(filteredCount int) string {
