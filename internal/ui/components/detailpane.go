@@ -169,11 +169,7 @@ func (d DetailPane) View() string {
 
 	lineCount := 0
 	for i := d.offset; i < end; i++ {
-		line := d.lines[i]
-		if len(line) > d.width && d.width > 0 {
-			line = line[:d.width]
-		}
-		b.WriteString(line)
+		b.WriteString(d.lines[i])
 		b.WriteString("\n")
 		lineCount++
 	}

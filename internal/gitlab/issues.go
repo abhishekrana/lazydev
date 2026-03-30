@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -282,9 +283,11 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		}
 	}
 
+	baseURL := projectBaseURL(issue.WebURL)
+
 	if issue.Description != "" {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString(renderMarkdown(issue.Description))
+		b.WriteString(renderMarkdown(issue.Description, baseURL))
 	}
 
 	if len(notes) > 0 {
@@ -293,15 +296,51 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
 			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body))
+			b.WriteString(renderMarkdown(note.Body, baseURL))
 		}
 	}
 
 	return b.String()
 }
 
+// relativeURLPattern matches markdown image/link paths starting with /
+var relativeURLPattern = regexp.MustCompile(`(\[.*?\]\()(/[^)]+)\)`)
+
+// gitlabImageAttrsPattern strips GitLab-specific image attributes like {width=900 height=492}
+var gitlabImageAttrsPattern = regexp.MustCompile(`\)\{[^}]*\}`)
+
+// projectBaseURL extracts the project URL from a resource WebURL.
+// e.g. "https://gitlab.com/group/project/-/issues/123" → "https://gitlab.com/group/project"
+func projectBaseURL(webURL string) string {
+	if idx := strings.Index(webURL, "/-/"); idx != -1 {
+		return webURL[:idx]
+	}
+	return ""
+}
+
+// resolveRelativeURLs replaces relative paths in markdown with full GitLab URLs
+// and strips GitLab-specific image attributes.
+func resolveRelativeURLs(text, baseURL string) string {
+	// Strip GitLab image attributes like ){width=900 height=492}
+	text = gitlabImageAttrsPattern.ReplaceAllString(text, ")")
+
+	if baseURL == "" {
+		return text
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	return relativeURLPattern.ReplaceAllStringFunc(text, func(match string) string {
+		sub := relativeURLPattern.FindStringSubmatch(match)
+		if len(sub) < 3 {
+			return match
+		}
+		return sub[1] + baseURL + sub[2] + ")"
+	})
+}
+
 // renderMarkdown renders markdown text for terminal display using glamour.
-func renderMarkdown(text string) string {
+// baseURL is the GitLab project URL used to resolve relative image/link paths.
+func renderMarkdown(text, baseURL string) string {
+	text = resolveRelativeURLs(text, baseURL)
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(theme.SolarizedMarkdownStyle()),
 		glamour.WithWordWrap(0), // no wrapping, let the pane handle it

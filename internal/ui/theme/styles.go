@@ -112,12 +112,13 @@ func SolarizedMarkdownStyle() ansi.StyleConfig {
 			Bold:  ptr(true),
 		},
 		Image: ansi.StylePrimitive{
-			Color:     ptr("#D33682"), // SolMagenta
+			Color:     ptr("#268BD2"), // SolBlue — render full URL, clickable
 			Underline: ptr(true),
+			Format:    "{{.text}}",
 		},
 		ImageText: ansi.StylePrimitive{
 			Color:  ptr("#839496"), // SolBase0
-			Format: "Image: {{.text}} →",
+			Format: "[image] ",
 		},
 		Code: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
