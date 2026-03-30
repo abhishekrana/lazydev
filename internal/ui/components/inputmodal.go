@@ -4,7 +4,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 )
 
 // InputModalAction is called with the user's input when they confirm.

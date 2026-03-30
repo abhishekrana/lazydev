@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // stream holds the state for a single active log stream.

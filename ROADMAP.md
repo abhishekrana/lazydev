@@ -1,4 +1,4 @@
-# lazydk Roadmap
+# lazydev Roadmap
 
 ## Phase 1: Skeleton + Docker Logs [DONE]
 
@@ -9,7 +9,7 @@
 5. Sidebar component with Compose project grouping
 6. Log stream manager + ring buffer (batched delivery: 50ms/100 lines)
 7. Log viewport with live tail
-8. **Milestone**: Run `lazydk`, see Docker containers, select one, see live logs
+8. **Milestone**: Run `lazydev`, see Docker containers, select one, see live logs
 
 ## Phase 2: Docker Actions + Polish [DONE]
 
@@ -76,7 +76,7 @@
 
 | Test | How |
 |------|-----|
-| Docker smoke test | `docker compose up` any project -> run `lazydk` -> containers appear -> select one -> live logs work |
+| Docker smoke test | `docker compose up` any project -> run `lazydev` -> containers appear -> select one -> live logs work |
 | K8s test | Point at minikube/kind -> pods listed by namespace -> pod logs stream |
 | Merged logs | All Logs tab -> logs from multiple sources interleaved by timestamp |
 | Actions | Restart container from TUI -> verify restart -> logs resume automatically |

@@ -5,10 +5,10 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/abhishek-rana/lazydk/internal/app"
-	"github.com/abhishek-rana/lazydk/internal/config"
-	"github.com/abhishek-rana/lazydk/internal/ui"
-	"github.com/abhishek-rana/lazydk/internal/ui/tabs"
+	"github.com/abhishek-rana/lazydev/internal/app"
+	"github.com/abhishek-rana/lazydev/internal/config"
+	"github.com/abhishek-rana/lazydev/internal/ui"
+	"github.com/abhishek-rana/lazydev/internal/ui/tabs"
 )
 
 func main() {

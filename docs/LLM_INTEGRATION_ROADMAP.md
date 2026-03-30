@@ -1,8 +1,8 @@
-# lazydk — Recommendations for LLM-Assisted Debugging
+# lazydev — Recommendations for LLM-Assisted Debugging
 
 ## Context
 
-lazydk is a working TUI for Docker + Kubernetes with live log tailing, filtering, search, and resource management. The goal is to evolve it into a tool that enables **LLM-assisted debugging workflows** — where an AI agent (like Claude Code) can analyze infrastructure logs and a human can guide the investigation.
+lazydev is a working TUI for Docker + Kubernetes with live log tailing, filtering, search, and resource management. The goal is to evolve it into a tool that enables **LLM-assisted debugging workflows** — where an AI agent (like Claude Code) can analyze infrastructure logs and a human can guide the investigation.
 
 The key insight from researching tools like Cursor Debug Mode, K8sGPT, Datadog Watchdog, and MCP servers: **the most impactful tools give LLMs structured access to runtime data, not just pretty displays for humans.**
 
@@ -14,7 +14,7 @@ The key insight from researching tools like Cursor Debug Mode, K8sGPT, Datadog W
 
 **Why**: This is the single most impactful feature. An MCP server lets Claude Code (or any LLM tool) directly query Docker/K8s logs without needing to read the TUI screen. The MCP protocol is becoming the standard for connecting AI agents to tools.
 
-**What to build**: `lazydk mcp` starts an MCP server exposing these tools:
+**What to build**: `lazydev mcp` starts an MCP server exposing these tools:
 
 | MCP Tool | Description |
 |----------|-------------|
@@ -37,7 +37,7 @@ Claude Code: "The postgres container was OOM killed, causing API 500s. Let me ch
 ```
 
 **Files to create**:
-- `cmd/lazydk/mcp.go` — MCP server entry point (flag: `lazydk mcp`)
+- `cmd/lazydev/mcp.go` — MCP server entry point (flag: `lazydev mcp`)
 - `internal/mcp/server.go` — MCP server implementation using stdio transport
 - `internal/mcp/tools.go` — Tool definitions and handlers
 
@@ -49,12 +49,12 @@ Claude Code: "The postgres container was OOM killed, causing API 500s. Let me ch
 
 **Commands**:
 ```bash
-lazydk logs api-server --tail=100 --level=error --json
-lazydk logs --all --errors --last=5m --json
-lazydk list --json
-lazydk describe api-server --json
-lazydk search "connection refused" --json
-lazydk events --namespace=default --json
+lazydev logs api-server --tail=100 --level=error --json
+lazydev logs --all --errors --last=5m --json
+lazydev list --json
+lazydev describe api-server --json
+lazydev search "connection refused" --json
+lazydev events --namespace=default --json
 ```
 
 **JSON output format** (for logs):
@@ -63,7 +63,7 @@ lazydk events --namespace=default --json
 ```
 
 **Files to create**:
-- `cmd/lazydk/cli.go` — CLI subcommands (using cobra or just flag parsing)
+- `cmd/lazydev/cli.go` — CLI subcommands (using cobra or just flag parsing)
 - `internal/output/json.go` — JSON formatters for all resource types
 
 ---
@@ -75,7 +75,7 @@ lazydk events --namespace=default --json
 **Features**:
 - `y` — yank current log line to clipboard (using OSC52 escape sequence for terminal clipboard)
 - `Y` — yank all visible/filtered lines to clipboard
-- `e` — export current log view to file (`/tmp/lazydk-export-{timestamp}.log`)
+- `e` — export current log view to file (`/tmp/lazydev-export-{timestamp}.log`)
 - `E` — export as structured JSON
 
 **Files to modify**:
@@ -87,7 +87,7 @@ lazydk events --namespace=default --json
 
 ### Phase D: JSON Log Parsing [MEDIUM IMPACT]
 
-**Why**: Most modern services output structured JSON logs. Currently lazydk displays them as raw strings. Parsing JSON would enable field-based filtering and much better readability.
+**Why**: Most modern services output structured JSON logs. Currently lazydev displays them as raw strings. Parsing JSON would enable field-based filtering and much better readability.
 
 **Features**:
 - Auto-detect JSON log lines (starts with `{`)
@@ -180,11 +180,11 @@ The most successful AI debugging tools follow this pattern:
 4. **Human-in-the-loop** — Human can guide LLM with bookmarks, annotations, filtered views
 5. **Export pipeline** — Easy to get data from tool into LLM context
 
-lazydk already has #1 (partially) and #4. The biggest gaps are #2 (MCP/CLI) and #5 (export).
+lazydev already has #1 (partially) and #4. The biggest gaps are #2 (MCP/CLI) and #5 (export).
 
 ## Verification
 
 - MCP Server: Configure Claude Code with the MCP server, ask it to debug a known issue
-- CLI Mode: `lazydk logs --all --errors --json | head -20` produces valid JSON
+- CLI Mode: `lazydev logs --all --errors --json | head -20` produces valid JSON
 - Export: Press `y` in TUI, paste in another terminal — correct log line
 - JSON Parsing: View a container with JSON logs, see formatted output

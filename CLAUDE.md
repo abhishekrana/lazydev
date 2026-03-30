@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-**lazydk** is a unified TUI for Docker and Kubernetes — view logs, monitor status, and manage resources in one terminal tool. Built with Go and Bubble Tea v2. Designed for LLM-assisted debugging workflows (export logs to clipboard/file for AI analysis).
+**lazydev** is a unified TUI for Docker and Kubernetes — view logs, monitor status, and manage resources in one terminal tool. Built with Go and Bubble Tea v2. Designed for LLM-assisted debugging workflows (export logs to clipboard/file for AI analysis).
 
 ## Build & Run
 
 ```bash
-make build     # Build binary (output: ./lazydk)
+make build     # Build binary (output: ./lazydev)
 make run       # Build and run
 make clean     # Remove binary
 make tidy      # go mod tidy
@@ -19,7 +19,7 @@ go build ./... # Build all packages (check compilation)
 
 ## Project Structure
 
-- `cmd/lazydk/main.go` — Entry point, creates SharedState and root model
+- `cmd/lazydev/main.go` — Entry point, creates SharedState and root model
 - `internal/app/app.go` — SharedState: holds Docker/K8s clients, StreamManager, config
 - `internal/ui/root.go` — Root Bubble Tea model, handles tab switching, message broadcasting to all tabs
 - `internal/ui/theme/styles.go` — Solarized Light palette, all Lip Gloss styles
@@ -52,7 +52,7 @@ go build ./... # Build all packages (check compilation)
 - Do not add Co-Authored-By lines to commit messages
 - Docker containers are grouped by `com.docker.compose.project` label; standalone containers go to "standalone" group
 - Keybindings support both vim-style (hjkl) and arrow keys simultaneously via `key.NewBinding` with multiple keys
-- Config path: `~/.config/lazydk/config.yaml` (XDG compliant)
+- Config path: `~/.config/lazydev/config.yaml` (XDG compliant)
 - Sidebar width is 15% of terminal width
 - Log lines are truncated to pane width (no wrap by default); `w` toggles wrap mode
 

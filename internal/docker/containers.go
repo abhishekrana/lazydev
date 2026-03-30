@@ -9,7 +9,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // ListContainers returns all containers mapped to the shared Container type.

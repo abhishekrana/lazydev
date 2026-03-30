@@ -9,13 +9,13 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/abhishek-rana/lazydk/internal/kube"
-	logpkg "github.com/abhishek-rana/lazydk/internal/log"
-	"github.com/abhishek-rana/lazydk/internal/ui"
-	"github.com/abhishek-rana/lazydk/internal/ui/components"
-	"github.com/abhishek-rana/lazydk/internal/ui/layout"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/internal/kube"
+	logpkg "github.com/abhishek-rana/lazydev/internal/log"
+	"github.com/abhishek-rana/lazydev/internal/ui"
+	"github.com/abhishek-rana/lazydev/internal/ui/components"
+	"github.com/abhishek-rana/lazydev/internal/ui/layout"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // kubeRightPane tracks which pane is shown on the right.

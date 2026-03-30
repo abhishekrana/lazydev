@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // GroupByCompose groups containers by their compose project (the Group field).

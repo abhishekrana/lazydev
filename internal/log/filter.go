@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // Filter specifies criteria for matching log lines. An empty/zero-value

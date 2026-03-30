@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 
-	"github.com/abhishek-rana/lazydk/internal/config"
-	"github.com/abhishek-rana/lazydk/internal/docker"
-	"github.com/abhishek-rana/lazydk/internal/kube"
-	logpkg "github.com/abhishek-rana/lazydk/internal/log"
+	"github.com/abhishek-rana/lazydev/internal/config"
+	"github.com/abhishek-rana/lazydev/internal/docker"
+	"github.com/abhishek-rana/lazydev/internal/kube"
+	logpkg "github.com/abhishek-rana/lazydev/internal/log"
 )
 
 // SharedState holds backend clients shared across tabs.

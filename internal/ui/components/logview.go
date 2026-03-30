@@ -10,9 +10,9 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/abhishek-rana/lazydk/internal/export"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/internal/export"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // LogView displays log lines with tail, search, level filtering, and highlighting.

@@ -6,9 +6,9 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui/components"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/internal/ui/components"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // TabModel is the interface each tab must implement.
@@ -226,7 +226,7 @@ func (m RootModel) executeCommand(cmd string, args []string) tea.Cmd {
 // View renders the root model.
 func (m RootModel) View() tea.View {
 	if !m.ready {
-		v := tea.NewView("Starting lazydk...")
+		v := tea.NewView("Starting lazydev...")
 		v.AltScreen = true
 		return v
 	}

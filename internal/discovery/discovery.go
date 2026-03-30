@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/abhishek-rana/lazydk/internal/docker"
-	"github.com/abhishek-rana/lazydk/internal/kube"
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/internal/docker"
+	"github.com/abhishek-rana/lazydev/internal/kube"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // DiscoveryResult holds the outcome of backend detection.

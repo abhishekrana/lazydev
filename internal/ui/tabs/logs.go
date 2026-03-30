@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui"
-	"github.com/abhishek-rana/lazydk/internal/ui/components"
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/internal/ui"
+	"github.com/abhishek-rana/lazydev/internal/ui/components"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // LogsTab shows a merged log stream from all active Docker and K8s sources.

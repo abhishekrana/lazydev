@@ -5,7 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 )
 
 // CmdExecutor is called with the parsed command and arguments.

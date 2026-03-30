@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 )
 
 // TabBar renders a horizontal tab bar.

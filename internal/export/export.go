@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
@@ -76,7 +76,7 @@ func ToFile(label, content, ext string) (string, error) {
 	// Sanitize label for filename.
 	safe := strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(label)
 	ts := time.Now().Format("20060102-150405")
-	filename := fmt.Sprintf("lazydk-%s-%s%s", safe, ts, ext)
+	filename := fmt.Sprintf("lazydev-%s-%s%s", safe, ts, ext)
 	path := filepath.Join(os.TempDir(), filename)
 
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

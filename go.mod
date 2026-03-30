@@ -1,4 +1,4 @@
-module github.com/abhishek-rana/lazydk
+module github.com/abhishek-rana/lazydev
 
 go 1.25.0
 

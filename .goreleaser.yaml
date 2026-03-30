@@ -1,10 +1,10 @@
 version: 2
 
-project_name: lazydk
+project_name: lazydev
 
 builds:
-  - main: ./cmd/lazydk
-    binary: lazydk
+  - main: ./cmd/lazydev
+    binary: lazydev
     env:
       - CGO_ENABLED=0
     goos:
@@ -40,4 +40,4 @@ changelog:
 release:
   github:
     owner: abhishek-rana
-    name: lazydk
+    name: lazydev

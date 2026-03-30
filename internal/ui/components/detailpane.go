@@ -5,7 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 )
 
 // DetailPane displays formatted text (JSON inspect, YAML, describe output).

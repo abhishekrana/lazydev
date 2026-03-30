@@ -59,5 +59,5 @@ func configPath() string {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "lazydk", "config.yaml")
+	return filepath.Join(dir, "lazydev", "config.yaml")
 }

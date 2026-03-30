@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // ParseLogLevel scans text for common log-level keywords and returns

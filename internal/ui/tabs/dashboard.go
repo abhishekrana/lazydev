@@ -5,11 +5,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/abhishek-rana/lazydk/internal/docker"
-	"github.com/abhishek-rana/lazydk/internal/kube"
-	"github.com/abhishek-rana/lazydk/internal/ui"
-	"github.com/abhishek-rana/lazydk/internal/ui/components"
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/internal/docker"
+	"github.com/abhishek-rana/lazydev/internal/kube"
+	"github.com/abhishek-rana/lazydev/internal/ui"
+	"github.com/abhishek-rana/lazydev/internal/ui/components"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 // DashboardTab shows a table overview of all resources with status and metrics.

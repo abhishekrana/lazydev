@@ -3,7 +3,7 @@ package log
 import (
 	"sync"
 
-	"github.com/abhishek-rana/lazydk/pkg/messages"
+	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
 const defaultCapacity = 10000

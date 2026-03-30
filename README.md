@@ -1,4 +1,4 @@
-# lazydk
+# lazydev
 
 A unified terminal UI for Docker and Kubernetes. View logs, monitor status, and manage resources across both platforms in one tool.
 
@@ -28,28 +28,28 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 ### From source
 
 ```bash
-git clone https://github.com/abhishek-rana/lazydk.git
-cd lazydk
+git clone https://github.com/abhishek-rana/lazydev.git
+cd lazydev
 make build
 ```
 
 ### Go install
 
 ```bash
-go install github.com/abhishek-rana/lazydk/cmd/lazydk@latest
+go install github.com/abhishek-rana/lazydev/cmd/lazydev@latest
 ```
 
 ## Usage
 
 ```bash
 # Run with auto-detection (finds Docker and/or K8s automatically)
-lazydk
+lazydev
 
 # Specify Docker host
-lazydk --docker-host tcp://localhost:2375
+lazydev --docker-host tcp://localhost:2375
 
 # Specify kubeconfig
-lazydk --kubeconfig ~/.kube/my-config
+lazydev --kubeconfig ~/.kube/my-config
 ```
 
 ## Keybindings
@@ -121,7 +121,7 @@ lazydk --kubeconfig ~/.kube/my-config
 
 ## Configuration
 
-Config file: `~/.config/lazydk/config.yaml`
+Config file: `~/.config/lazydev/config.yaml`
 
 ```yaml
 docker:
@@ -153,7 +153,7 @@ ui:
 ## Architecture
 
 ```
-cmd/lazydk/main.go           Entry point
+cmd/lazydev/main.go           Entry point
 internal/
   app/                        SharedState, backend wiring
   ui/

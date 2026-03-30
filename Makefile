@@ -1,10 +1,10 @@
-BINARY := lazydk
+BINARY := lazydev
 GOFLAGS := -ldflags="-s -w"
 
 .PHONY: build run clean tidy fmt lint check
 
 build:
-	go build $(GOFLAGS) -o $(BINARY) ./cmd/lazydk/
+	go build $(GOFLAGS) -o $(BINARY) ./cmd/lazydev/
 
 run: build
 	./$(BINARY)

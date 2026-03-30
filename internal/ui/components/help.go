@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/abhishek-rana/lazydk/internal/ui/theme"
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 )
 
 // HelpOverlay displays a full-screen keybinding reference.
@@ -129,7 +129,7 @@ func (h HelpOverlay) View() string {
 
 	var b strings.Builder
 
-	title := theme.ModalTitleStyle.Render("  lazydk — Keybindings  ")
+	title := theme.ModalTitleStyle.Render("  lazydev — Keybindings  ")
 	b.WriteString(title)
 	b.WriteString("\n\n")
 
