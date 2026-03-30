@@ -392,11 +392,6 @@ func (l LogView) View() string {
 
 	viewable := l.viewableHeight()
 	filtered := l.visibleLines()
-	// Content width: reserve 1 column for the scrollbar.
-	contentWidth := l.width - 1
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
 
 	start := l.offset
 	if start < 0 {
@@ -407,52 +402,46 @@ func (l LogView) View() string {
 		end = len(filtered)
 	}
 
-	// Compute scrollbar thumb position.
-	thumbStart, thumbEnd := l.scrollbarThumb(len(filtered), viewable, start)
-
 	cursorStyle := theme.LogCursorStyle
 
 	lineCount := 0
 	for i := start; i < end && lineCount < viewable; i++ {
 		isCursor := (i == l.cursor) && l.focused
 
-		if l.wrapLines && contentWidth > 0 {
+		if l.wrapLines && l.width > 0 {
 			raw := l.rawLine(filtered[i])
 			firstChunk := true
 			for len(raw) > 0 && lineCount < viewable {
 				chunk := raw
-				if len(chunk) > contentWidth {
-					chunk = raw[:contentWidth]
-					raw = raw[contentWidth:]
+				if len(chunk) > l.width {
+					chunk = raw[:l.width]
+					raw = raw[l.width:]
 				} else {
 					raw = ""
 				}
 				if isCursor && firstChunk {
-					b.WriteString(cursorStyle.Width(contentWidth).Render(chunk))
+					b.WriteString(cursorStyle.Width(l.width).Render(chunk))
 					firstChunk = false
 				} else {
 					styled := l.styleText(chunk, filtered[i].Level)
 					b.WriteString(styled)
 				}
-				b.WriteString(l.scrollbarChar(lineCount, thumbStart, thumbEnd))
 				b.WriteString("\n")
 				lineCount++
 			}
 		} else {
 			if isCursor {
-				b.WriteString(cursorStyle.Width(contentWidth).Render(l.rawLineTruncated(filtered[i], contentWidth)))
+				b.WriteString(cursorStyle.Width(l.width).Render(l.rawLineTruncated(filtered[i])))
 			} else {
-				b.WriteString(l.renderLine(filtered[i], contentWidth))
+				b.WriteString(l.renderLine(filtered[i]))
 			}
-			b.WriteString(l.scrollbarChar(lineCount, thumbStart, thumbEnd))
 			b.WriteString("\n")
 			lineCount++
 		}
 	}
 
 	for lineCount < viewable {
-		b.WriteString(strings.Repeat(" ", contentWidth))
-		b.WriteString(l.scrollbarChar(lineCount, thumbStart, thumbEnd))
+		b.WriteString(strings.Repeat(" ", l.width))
 		b.WriteString("\n")
 		lineCount++
 	}
@@ -469,27 +458,6 @@ func (l LogView) View() string {
 	return b.String()
 }
 
-// scrollbarThumb returns the start and end line indices (0-based within the viewable area)
-// for the scrollbar thumb.
-func (l LogView) scrollbarThumb(totalLines, viewable, offset int) (int, int) {
-	if totalLines <= viewable || viewable <= 0 {
-		return -1, -1 // No scrollbar needed.
-	}
-	thumbSize := max(1, viewable*viewable/totalLines)
-	thumbPos := offset * (viewable - thumbSize) / max(1, totalLines-viewable)
-	return thumbPos, thumbPos + thumbSize
-}
-
-// scrollbarChar returns the scrollbar character for a given view row.
-func (l LogView) scrollbarChar(row, thumbStart, thumbEnd int) string {
-	if thumbStart < 0 {
-		return " " // No scrollbar.
-	}
-	if row >= thumbStart && row < thumbEnd {
-		return theme.ScrollbarThumbStyle.Render("┃")
-	}
-	return " "
-}
 
 func (l LogView) renderStatusLine(filteredCount int) string {
 	var parts []string
@@ -541,11 +509,11 @@ func levelFilterName(level messages.LogLevel) string {
 	}
 }
 
-// rawLineTruncated returns unstyled text truncated to the given width (for cursor highlight).
-func (l LogView) rawLineTruncated(line messages.LogLine, w int) string {
+// rawLineTruncated returns unstyled text truncated to pane width (for cursor highlight).
+func (l LogView) rawLineTruncated(line messages.LogLine) string {
 	raw := l.rawLine(line)
-	if w > 0 && len(raw) > w {
-		return raw[:w]
+	if l.width > 0 && len(raw) > l.width {
+		return raw[:l.width]
 	}
 	return raw
 }
@@ -592,7 +560,7 @@ func (l LogView) visibleLines() []messages.LogLine {
 	return lines
 }
 
-func (l LogView) renderLine(line messages.LogLine, w int) string {
+func (l LogView) renderLine(line messages.LogLine) string {
 	var prefixParts []string
 	prefixLen := 0
 
@@ -612,8 +580,8 @@ func (l LogView) renderLine(line messages.LogLine, w int) string {
 
 	// Truncate raw text to fit width (accounting for prefix).
 	text := line.Text
-	if w > 0 {
-		maxText := w - prefixLen
+	if l.width > 0 {
+		maxText := l.width - prefixLen
 		if maxText < 10 {
 			maxText = 10
 		}
