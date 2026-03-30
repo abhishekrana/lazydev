@@ -39,7 +39,7 @@ tasks:
     cmds:
       - gofmt -s -w .
       - goimports -w .
-      - npx prettier@{{.PRETTIER_VERSION}} --write "**/*.md" 2>/dev/null || true
+      - npx prettier@{{.PRETTIER_VERSION}} --write "**/*.md" "**/*.yaml" "**/*.yml" 2>/dev/null || true
 
   format-check:
     desc: Check file formatting
