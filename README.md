@@ -30,7 +30,9 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 ```bash
 git clone https://github.com/abhishekrana/lazydev.git
 cd lazydev
-make build
+./bootstrap.sh   # install Taskfile runner
+task init         # install dev tools
+task build        # build binary
 ```
 
 ### Go install

@@ -4,18 +4,19 @@
 
 **lazydev** is a unified TUI for Docker and Kubernetes — view logs, monitor status, and manage resources in one terminal tool. Built with Go and Bubble Tea v2. Designed for LLM-assisted debugging workflows (export logs to clipboard/file for AI analysis).
 
-## Build & Run
+## Setup & Build
 
 ```bash
-make init      # Install dev tools (goimports, golangci-lint) and tidy deps
-make build     # Build binary (output: ./lazydev)
-make run       # Build and run
-make clean     # Remove binary
-make tidy      # go mod tidy
-make fmt       # Format all Go files (gofmt + goimports)
-make lint      # Run golangci-lint
-make check     # Format + lint + build (run before committing)
-go build ./... # Build all packages (check compilation)
+./bootstrap.sh  # Install Taskfile runner
+task init        # Install dev tools (goimports, golangci-lint) and tidy deps
+task build       # Build binary (output: ./lazydev)
+task run         # Build and run
+task clean       # Remove binary
+task tidy        # go mod tidy
+task fmt         # Format Go + Markdown files
+task lint        # Run golangci-lint
+task check       # Format + lint + build (run before committing)
+go build ./...   # Build all packages (check compilation)
 ```
 
 ## Project Structure
