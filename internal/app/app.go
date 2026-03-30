@@ -5,12 +5,14 @@ import (
 
 	"github.com/abhishek-rana/lazydk/internal/config"
 	"github.com/abhishek-rana/lazydk/internal/docker"
+	"github.com/abhishek-rana/lazydk/internal/kube"
 	logpkg "github.com/abhishek-rana/lazydk/internal/log"
 )
 
 // SharedState holds backend clients shared across tabs.
 type SharedState struct {
 	DockerClient *docker.Client
+	KubeClient   *kube.Client
 	StreamMgr    *logpkg.StreamManager
 	Config       *config.Config
 	cancel       context.CancelFunc
@@ -30,6 +32,12 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 	dc, err := docker.NewClient(cfg.Docker.Host)
 	if err == nil {
 		state.DockerClient = dc
+	}
+
+	// Try Kubernetes.
+	kc, err := kube.NewClient(cfg.Kubernetes.Kubeconfig)
+	if err == nil {
+		state.KubeClient = kc
 	}
 
 	return state, nil
