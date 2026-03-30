@@ -234,11 +234,12 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 	fmt.Fprintf(&b, "Updated:   %s\n", mr.UpdatedAt.Format("2006-01-02 15:04"))
 	fmt.Fprintf(&b, "URL:       %s\n", mr.WebURL)
 
+	baseURL := projectBaseURL(mr.WebURL)
 	hostURL := gitlabHostURL(mr.WebURL)
 
 	if mr.Description != "" {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString(renderMarkdown(mr.Description, hostURL, mr.ProjectID))
+		b.WriteString(renderMarkdown(mr.Description, baseURL, hostURL, mr.ProjectID))
 	}
 
 	if len(notes) > 0 {
@@ -247,7 +248,7 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
 			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body, hostURL, mr.ProjectID))
+			b.WriteString(renderMarkdown(note.Body, baseURL, hostURL, mr.ProjectID))
 			b.WriteString("\n")
 		}
 	}
