@@ -240,7 +240,9 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 }
 
 // FormatIssueDetail formats an issue, related MRs, and notes for the detail pane.
-func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, relatedMRs []messages.GitLabIssueMR) string {
+// width is used for word wrapping markdown content.
+func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, relatedMRs []messages.GitLabIssueMR, width int) string {
+	markdownWidth = width
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "#%d %s [%s]\n", issue.IID, issue.Title, issue.State)
@@ -337,13 +339,20 @@ func resolveRelativeURLs(text, baseURL string) string {
 	})
 }
 
+// markdownWidth is set by the caller to control word wrapping in rendered markdown.
+var markdownWidth int
+
 // renderMarkdown renders markdown text for terminal display using glamour.
 // baseURL is the GitLab project URL used to resolve relative image/link paths.
 func renderMarkdown(text, baseURL string) string {
 	text = resolveRelativeURLs(text, baseURL)
+	width := markdownWidth
+	if width <= 0 {
+		width = 80
+	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(theme.SolarizedMarkdownStyle()),
-		glamour.WithWordWrap(0), // no wrapping, let the pane handle it
+		glamour.WithWordWrap(width),
 	)
 	if err != nil {
 		return text

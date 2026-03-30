@@ -119,7 +119,7 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("MR detail: %v", msg.err)
 			return t, nil
 		}
-		detail := gitlabpkg.FormatMRDetail(msg.mr, msg.notes)
+		detail := gitlabpkg.FormatMRDetail(msg.mr, msg.notes, t.detailPane.Width())
 		t.detailPane.SetContent(fmt.Sprintf("!%d %s", msg.mr.IID, msg.mr.Title), detail)
 		return t, nil
 

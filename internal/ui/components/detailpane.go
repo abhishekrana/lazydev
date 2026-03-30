@@ -47,6 +47,11 @@ func (d *DetailPane) SetSize(width, height int) {
 	d.height = height
 }
 
+// Width returns the pane width.
+func (d DetailPane) Width() int {
+	return d.width
+}
+
 // SetFocused sets focus state.
 func (d *DetailPane) SetFocused(focused bool) {
 	d.focused = focused

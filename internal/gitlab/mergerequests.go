@@ -204,7 +204,9 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 }
 
 // FormatMRDetail formats a merge request and its notes for the detail pane.
-func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote) string {
+// width is used for word wrapping markdown content.
+func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int) string {
+	markdownWidth = width
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "!%d %s [%s]\n", mr.IID, mr.Title, mr.State)
