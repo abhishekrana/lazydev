@@ -100,7 +100,8 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		var containers []messages.Container
 		for _, p := range msg.Pipelines {
 			t.pipelines = append(t.pipelines, p)
-			containers = append(containers, pipelineToContainer(p, "My pipelines"))
+			group := fmt.Sprintf("!%s", p.MRIid)
+			containers = append(containers, pipelineToContainer(p, group))
 		}
 		t.sidebar.SetItems(containers)
 		// Flag auto-select for when the tab becomes active.
@@ -412,7 +413,7 @@ func pipelineToContainer(p messages.GitLabPipeline, group string) messages.Conta
 	icon := gitlabpkg.PipelineStatusIcon(p.Status)
 	var name string
 	if p.MRIid != "" {
-		name = fmt.Sprintf("#%d !%s [%s] %s", p.ID, p.MRIid, p.PipelineType, icon)
+		name = fmt.Sprintf("#%d %s %s", p.ID, p.PipelineType, icon)
 	} else {
 		name = fmt.Sprintf("#%d %s %s", p.ID, p.Ref, icon)
 	}
