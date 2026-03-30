@@ -38,9 +38,10 @@ type PipelinesTab struct {
 	selectedJobIdx int
 	notification   string
 	pendingCtrlW   bool
-	refreshS       int
-	fetchSeq       uint64
-	pendingFetch   string
+	refreshS        int
+	fetchSeq        uint64
+	pendingFetch    string
+	needsAutoSelect bool
 }
 
 // NewPipelinesTab creates a new GitLab Pipelines tab.
@@ -108,11 +109,9 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 		t.sidebar.SetItems(containers)
-		// Auto-select first item on initial load.
+		// Flag auto-select for when the tab becomes active.
 		if t.selectedID == 0 {
-			if item, ok := t.sidebar.SelectedItem(); ok {
-				return t, t.selectPipeline(item.ID)
-			}
+			t.needsAutoSelect = true
 		}
 		return t, nil
 
@@ -160,6 +159,15 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = msg.Action + " done"
 		}
 		return t, t.fetchPipelines()
+
+	case messages.TabActivatedMsg:
+		if t.needsAutoSelect {
+			t.needsAutoSelect = false
+			if item, ok := t.sidebar.SelectedItem(); ok {
+				return t, t.selectPipeline(item.ID)
+			}
+		}
+		return t, nil
 
 	case pipelineRefreshTickMsg:
 		return t, tea.Batch(t.fetchPipelines(), t.tickRefresh())

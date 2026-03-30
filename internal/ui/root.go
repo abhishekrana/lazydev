@@ -101,9 +101,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for i, tab := range m.tabs {
 				tabWidth := len(tab.Title()) + 4 // padding
 				if mouse.X >= x && mouse.X < x+tabWidth {
-					m.activeTab = i
-					m.tabBar.ActiveTab = m.activeTab
-					return m, nil
+					return m, m.switchTab(i)
 				}
 				x += tabWidth
 			}
@@ -120,26 +118,22 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cmdPalette.Show(m.executeCommand)
 			return m, nil
 		case key.Matches(msg, theme.Keys.TabNext):
-			m.activeTab = (m.activeTab + 1) % len(m.tabs)
-			m.tabBar.ActiveTab = m.activeTab
-			return m, nil
+			idx := (m.activeTab + 1) % len(m.tabs)
+			return m, m.switchTab(idx)
 		case key.Matches(msg, theme.Keys.TabPrev):
-			m.activeTab = (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
-			m.tabBar.ActiveTab = m.activeTab
-			return m, nil
+			idx := (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
+			return m, m.switchTab(idx)
 		case msg.String() >= "1" && msg.String() <= "9":
 			idx := int(msg.String()[0] - '1')
 			if idx >= 0 && idx < len(m.tabs) {
-				m.activeTab = idx
-				m.tabBar.ActiveTab = m.activeTab
+				return m, m.switchTab(idx)
 			}
 			return m, nil
 		}
 
 	case messages.SwitchTabMsg:
 		if msg.Tab >= 0 && msg.Tab < len(m.tabs) {
-			m.activeTab = msg.Tab
-			m.tabBar.ActiveTab = m.activeTab
+			return m, m.switchTab(msg.Tab)
 		}
 		return m, nil
 
@@ -187,6 +181,15 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// switchTab changes the active tab and notifies it.
+func (m *RootModel) switchTab(idx int) tea.Cmd {
+	m.activeTab = idx
+	m.tabBar.ActiveTab = idx
+	var cmd tea.Cmd
+	m.tabs[idx], cmd = m.tabs[idx].Update(messages.TabActivatedMsg{})
+	return cmd
 }
 
 // executeCommand handles commands from the command palette.

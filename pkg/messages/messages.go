@@ -349,3 +349,6 @@ type WindowSizeMsg struct {
 	Width  int
 	Height int
 }
+
+// TabActivatedMsg is sent to a tab when it becomes the active tab.
+type TabActivatedMsg struct{}

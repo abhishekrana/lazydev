@@ -29,9 +29,10 @@ type MRsTab struct {
 	mrs          []messages.GitLabMR
 	notification string
 	pendingCtrlW bool
-	refreshS     int
-	fetchSeq     uint64
-	pendingFetch string
+	refreshS       int
+	fetchSeq       uint64
+	pendingFetch   string
+	needsAutoSelect bool
 }
 
 // NewMRsTab creates a new GitLab Merge Requests tab.
@@ -102,11 +103,9 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 		t.sidebar.SetItems(containers)
-		// Auto-select first item on initial load.
+		// Flag auto-select for when the tab becomes active.
 		if t.selectedIID == 0 {
-			if item, ok := t.sidebar.SelectedItem(); ok {
-				return t, t.selectMR(item.ID)
-			}
+			t.needsAutoSelect = true
 		}
 		return t, nil
 
@@ -138,6 +137,15 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, t.fetchMRs()
 
 	case messages.ExecFinishedMsg:
+		return t, nil
+
+	case messages.TabActivatedMsg:
+		if t.needsAutoSelect {
+			t.needsAutoSelect = false
+			if item, ok := t.sidebar.SelectedItem(); ok {
+				return t, t.selectMR(item.ID)
+			}
+		}
 		return t, nil
 
 	case mrRefreshTickMsg:

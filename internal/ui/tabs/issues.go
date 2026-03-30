@@ -30,9 +30,10 @@ type IssuesTab struct {
 	issues       []messages.GitLabIssue // flat list for lookup
 	notification string
 	pendingCtrlW bool
-	refreshS     int
-	fetchSeq     uint64 // incremented on each detail fetch, used to discard stale responses
-	pendingFetch string // sidebar item ID waiting for debounce
+	refreshS        int
+	fetchSeq        uint64 // incremented on each detail fetch, used to discard stale responses
+	pendingFetch    string // sidebar item ID waiting for debounce
+	needsAutoSelect bool
 }
 
 // NewIssuesTab creates a new GitLab Issues tab.
@@ -140,11 +141,9 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 		t.sidebar.SetItems(containers)
-		// Auto-select first item on initial load.
+		// Flag auto-select for when the tab becomes active.
 		if t.selectedIID == 0 {
-			if item, ok := t.sidebar.SelectedItem(); ok {
-				return t, t.selectIssue(item.ID)
-			}
+			t.needsAutoSelect = true
 		}
 		return t, nil
 
@@ -178,6 +177,15 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, t.fetchIssues()
 
 	case messages.ExecFinishedMsg:
+		return t, nil
+
+	case messages.TabActivatedMsg:
+		if t.needsAutoSelect {
+			t.needsAutoSelect = false
+			if item, ok := t.sidebar.SelectedItem(); ok {
+				return t, t.selectIssue(item.ID)
+			}
+		}
 		return t, nil
 
 	case issueRefreshTickMsg:
