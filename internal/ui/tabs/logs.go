@@ -33,6 +33,7 @@ func (t *LogsTab) SetSize(width, height int) {
 	t.width = width
 	t.height = height
 	t.logView.SetSize(width, height)
+	t.logView.SetOffset(0, 2) // tab bar height
 	t.logView.SetFocused(true) // always focused in this tab
 }
 
@@ -53,6 +54,11 @@ func (t *LogsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("export failed: %v", msg.Err)
 		}
 		return t, nil
+
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+		t.logView.SetFocused(true)
+		cmd := t.logView.Update(msg)
+		return t, cmd
 
 	case tea.KeyPressMsg:
 		// Ensure logview stays focused.

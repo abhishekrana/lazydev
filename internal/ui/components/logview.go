@@ -31,6 +31,8 @@ type LogView struct {
 	pendingG    bool
 	wrapLines   bool
 	cursor      int // current line index in filtered lines
+	yOffset     int // screen Y offset for mouse coordinate mapping
+	xOffset     int // screen X offset for mouse coordinate mapping
 }
 
 // NewLogView creates a new log viewport.
@@ -49,6 +51,12 @@ func NewLogView() LogView {
 func (l *LogView) SetSize(width, height int) {
 	l.width = width
 	l.height = height
+}
+
+// SetOffset sets the screen offset for mouse coordinate mapping.
+func (l *LogView) SetOffset(x, y int) {
+	l.xOffset = x
+	l.yOffset = y
 }
 
 // SetFocused sets whether the logview has focus.
@@ -117,6 +125,68 @@ func (l LogView) viewableHeight() int {
 func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 	if l.searching {
 		return l.updateSearch(msg)
+	}
+
+	// Handle mouse events even when not focused (tabs forward clicks).
+	switch msg := msg.(type) {
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		row := mouse.Y - l.yOffset
+		// Account for header line.
+		if l.sourceLabel != "" {
+			row--
+		}
+		if row >= 0 && row < l.viewableHeight() {
+			filtered := l.visibleLines()
+			idx := l.offset + row
+			if idx >= 0 && idx < len(filtered) {
+				l.cursor = idx
+				l.autoScroll = false
+				if idx >= len(filtered)-1 {
+					l.autoScroll = true
+				}
+			}
+		}
+		return nil
+
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		filtered := l.visibleLines()
+		viewable := l.viewableHeight()
+		if mouse.Button == tea.MouseWheelUp {
+			l.autoScroll = false
+			l.offset -= 3
+			if l.offset < 0 {
+				l.offset = 0
+			}
+			// Keep cursor in visible range.
+			if l.cursor >= l.offset+viewable {
+				l.cursor = l.offset + viewable - 1
+			}
+			if l.cursor < l.offset {
+				l.cursor = l.offset
+			}
+		} else if mouse.Button == tea.MouseWheelDown {
+			l.offset += 3
+			maxOffset := len(filtered) - viewable
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			if l.offset > maxOffset {
+				l.offset = maxOffset
+			}
+			// Keep cursor in visible range.
+			if l.cursor < l.offset {
+				l.cursor = l.offset
+			}
+			if l.cursor >= l.offset+viewable && len(filtered) > 0 {
+				l.cursor = l.offset + viewable - 1
+			}
+			if l.cursor >= len(filtered)-1 {
+				l.autoScroll = true
+			}
+		}
+		return nil
 	}
 
 	if !l.focused {
@@ -322,6 +392,11 @@ func (l LogView) View() string {
 
 	viewable := l.viewableHeight()
 	filtered := l.visibleLines()
+	// Content width: reserve 1 column for the scrollbar.
+	contentWidth := l.width - 1
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
 
 	start := l.offset
 	if start < 0 {
@@ -332,47 +407,52 @@ func (l LogView) View() string {
 		end = len(filtered)
 	}
 
+	// Compute scrollbar thumb position.
+	thumbStart, thumbEnd := l.scrollbarThumb(len(filtered), viewable, start)
+
 	cursorStyle := theme.LogCursorStyle
 
 	lineCount := 0
 	for i := start; i < end && lineCount < viewable; i++ {
 		isCursor := (i == l.cursor) && l.focused
 
-		if l.wrapLines && l.width > 0 {
+		if l.wrapLines && contentWidth > 0 {
 			raw := l.rawLine(filtered[i])
 			firstChunk := true
 			for len(raw) > 0 && lineCount < viewable {
 				chunk := raw
-				if len(chunk) > l.width {
-					chunk = raw[:l.width]
-					raw = raw[l.width:]
+				if len(chunk) > contentWidth {
+					chunk = raw[:contentWidth]
+					raw = raw[contentWidth:]
 				} else {
 					raw = ""
 				}
 				if isCursor && firstChunk {
-					b.WriteString(cursorStyle.Width(l.width).Render(chunk))
+					b.WriteString(cursorStyle.Width(contentWidth).Render(chunk))
 					firstChunk = false
 				} else {
 					styled := l.styleText(chunk, filtered[i].Level)
 					b.WriteString(styled)
 				}
+				b.WriteString(l.scrollbarChar(lineCount, thumbStart, thumbEnd))
 				b.WriteString("\n")
 				lineCount++
 			}
 		} else {
-			rendered := l.renderLine(filtered[i])
 			if isCursor {
-				b.WriteString(cursorStyle.Width(l.width).Render(l.rawLineTruncated(filtered[i])))
+				b.WriteString(cursorStyle.Width(contentWidth).Render(l.rawLineTruncated(filtered[i], contentWidth)))
 			} else {
-				b.WriteString(rendered)
+				b.WriteString(l.renderLine(filtered[i], contentWidth))
 			}
+			b.WriteString(l.scrollbarChar(lineCount, thumbStart, thumbEnd))
 			b.WriteString("\n")
 			lineCount++
 		}
 	}
 
 	for lineCount < viewable {
-		b.WriteString(strings.Repeat(" ", l.width))
+		b.WriteString(strings.Repeat(" ", contentWidth))
+		b.WriteString(l.scrollbarChar(lineCount, thumbStart, thumbEnd))
 		b.WriteString("\n")
 		lineCount++
 	}
@@ -387,6 +467,28 @@ func (l LogView) View() string {
 	}
 
 	return b.String()
+}
+
+// scrollbarThumb returns the start and end line indices (0-based within the viewable area)
+// for the scrollbar thumb.
+func (l LogView) scrollbarThumb(totalLines, viewable, offset int) (int, int) {
+	if totalLines <= viewable || viewable <= 0 {
+		return -1, -1 // No scrollbar needed.
+	}
+	thumbSize := max(1, viewable*viewable/totalLines)
+	thumbPos := offset * (viewable - thumbSize) / max(1, totalLines-viewable)
+	return thumbPos, thumbPos + thumbSize
+}
+
+// scrollbarChar returns the scrollbar character for a given view row.
+func (l LogView) scrollbarChar(row, thumbStart, thumbEnd int) string {
+	if thumbStart < 0 {
+		return " " // No scrollbar.
+	}
+	if row >= thumbStart && row < thumbEnd {
+		return theme.ScrollbarThumbStyle.Render("┃")
+	}
+	return theme.ScrollbarTrackStyle.Render("│")
 }
 
 func (l LogView) renderStatusLine(filteredCount int) string {
@@ -439,11 +541,11 @@ func levelFilterName(level messages.LogLevel) string {
 	}
 }
 
-// rawLineTruncated returns unstyled text truncated to pane width (for cursor highlight).
-func (l LogView) rawLineTruncated(line messages.LogLine) string {
+// rawLineTruncated returns unstyled text truncated to the given width (for cursor highlight).
+func (l LogView) rawLineTruncated(line messages.LogLine, w int) string {
 	raw := l.rawLine(line)
-	if l.width > 0 && len(raw) > l.width {
-		return raw[:l.width]
+	if w > 0 && len(raw) > w {
+		return raw[:w]
 	}
 	return raw
 }
@@ -490,7 +592,7 @@ func (l LogView) visibleLines() []messages.LogLine {
 	return lines
 }
 
-func (l LogView) renderLine(line messages.LogLine) string {
+func (l LogView) renderLine(line messages.LogLine, w int) string {
 	var prefixParts []string
 	prefixLen := 0
 
@@ -510,8 +612,8 @@ func (l LogView) renderLine(line messages.LogLine) string {
 
 	// Truncate raw text to fit width (accounting for prefix).
 	text := line.Text
-	if l.width > 0 {
-		maxText := l.width - prefixLen
+	if w > 0 {
+		maxText := w - prefixLen
 		if maxText < 10 {
 			maxText = 10
 		}

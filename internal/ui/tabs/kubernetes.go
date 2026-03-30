@@ -79,6 +79,7 @@ func (t *KubeTab) SetSize(width, height int) {
 	t.sidebar.SetSize(sidebarWidth, height)
 	t.sidebar.SetYOffset(2) // tab bar height
 	t.logView.SetSize(rightWidth, height)
+	t.logView.SetOffset(sidebarWidth, 2) // tab bar height
 	t.detailPane.SetSize(rightWidth, height)
 	t.modal.SetSize(width, height)
 	t.inputModal.SetSize(width, height)
@@ -199,6 +200,20 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.detailPane.SetFocused(true)
 		} else {
 			t.logView.SetFocused(true)
+			cmd := t.logView.Update(msg)
+			return t, cmd
+		}
+		return t, nil
+
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		sidebarWidth := t.width * 15 / 100
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if mouse.X >= sidebarWidth && t.rightPane == kubeRightLogs {
+			cmd := t.logView.Update(msg)
+			return t, cmd
 		}
 		return t, nil
 

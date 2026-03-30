@@ -76,6 +76,7 @@ func (t *DockerTab) SetSize(width, height int) {
 	t.sidebar.SetSize(sidebarWidth, height)
 	t.sidebar.SetYOffset(2) // tab bar height
 	t.logView.SetSize(rightWidth, height)
+	t.logView.SetOffset(sidebarWidth, 2) // tab bar height
 	t.detailPane.SetSize(rightWidth, height)
 	t.modal.SetSize(width, height)
 }
@@ -181,13 +182,27 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 			return t, cmd
 		}
-		// Click on right pane — focus it.
+		// Click on right pane — focus it and forward click.
 		t.focusSidebar = false
 		t.sidebar.SetFocused(false)
 		if t.rightPane == paneDetail {
 			t.detailPane.SetFocused(true)
 		} else {
 			t.logView.SetFocused(true)
+			cmd := t.logView.Update(msg)
+			return t, cmd
+		}
+		return t, nil
+
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		sidebarWidth := t.width * 15 / 100
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if mouse.X >= sidebarWidth && t.rightPane == paneLogs {
+			cmd := t.logView.Update(msg)
+			return t, cmd
 		}
 		return t, nil
 
