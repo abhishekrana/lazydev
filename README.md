@@ -8,12 +8,20 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 
 - **Tab-based UI** — separate tabs for Docker, Kubernetes, All Logs, and Dashboard
 - **Live log tailing** — real-time streaming with batched delivery for smooth rendering
-- **Log search** — press `/` to filter logs by text or regex
-- **Log level highlighting** — ERROR (red), WARN (yellow), INFO (green), DEBUG (blue)
+- **Log search & filter** — `/` to search logs, `f` to cycle log level filter (ERROR+, WARN+, INFO+, DEBUG+)
+- **Log level highlighting** — ERROR (red), WARN (yellow), INFO (green), DEBUG (cyan), FATAL (magenta bold)
+- **Cursor navigation** — cursor highlight on current log line, `gg`/`G` for top/bottom
+- **Wrap toggle** — `w` to toggle line wrapping in log pane
+- **Log export** — `y` yank line, `Y` yank all, `e` export to file, `E` export JSON, `o` open in `$EDITOR`
 - **Grouped resources** — Docker containers grouped by Compose project, K8s pods by namespace
+- **Collapsible groups** — `Enter` to expand/collapse resource groups in sidebar
 - **Auto-detect backends** — automatically finds Docker daemon and kubeconfig
 - **Container actions** — restart, stop, remove, inspect, exec, port-forward, scale
-- **Vim + arrow key navigation** — hjkl and arrow keys both work
+- **Vim + arrow key navigation** — hjkl and arrow keys, `Ctrl+W W` / `Alt+W` for pane switching
+- **Sidebar search** — `/` in sidebar for live resource filtering
+- **Mouse support** — click to select tabs, resources, and switch focus
+- **Solarized Light theme** — clean, readable color palette
+- **LLM-friendly exports** — structured text/JSON export for AI-assisted debugging
 
 ## Installation
 
@@ -61,27 +69,36 @@ lazydk --kubeconfig ~/.kube/my-config
 |-----|--------|
 | `j` / `Down` | Move down |
 | `k` / `Up` | Move up |
-| `h` / `Left` | Focus sidebar |
-| `l` / `Right` | Focus log pane |
-| `Enter` | Select / confirm |
+| `Ctrl+W W` / `Alt+W` | Toggle pane focus (sidebar ↔ logs) |
+| `Enter` | Select item / move focus to logs |
 | `Esc` | Back / cancel |
-| `g` | Scroll to top |
-| `G` | Scroll to bottom (auto-follow) |
+| `gg` | Go to top |
+| `G` | Go to bottom (auto-follow) |
+
+### Log View
+
+| Key | Action |
+|-----|--------|
+| `/` | Search logs |
+| `f` | Cycle log level filter (ALL → ERROR+ → WARN+ → INFO+ → DEBUG+) |
+| `w` | Toggle line wrapping |
+| `y` | Yank current line to clipboard (OSC52) |
+| `Y` | Yank all filtered lines to clipboard |
+| `e` | Export filtered logs to text file (`/tmp/`) |
+| `E` | Export filtered logs to JSON file |
+| `o` | Open filtered logs in `$EDITOR` at cursor line |
 
 ### Actions
 
 | Key | Action |
 |-----|--------|
-| `/` | Search logs |
-| `f` | Filter by log level |
 | `r` | Restart container/pod |
 | `s` | Stop container/pod |
-| `d` | Delete |
+| `d` | Delete (with confirmation) |
 | `D` | Describe / inspect |
-| `y` | View YAML |
 | `x` | Exec shell |
 | `p` | Port forward |
-| `S` | Scale |
+| `S` | Scale deployment |
 
 ## UI Layout
 
@@ -118,7 +135,7 @@ kubernetes:
 
 ui:
   theme: dark
-  sidebar_width: 30           # percentage of terminal width
+  sidebar_width: 15           # percentage of terminal width
   log_buffer_size: 10000      # lines per source
   timestamps: true
   wrap_lines: false
@@ -148,6 +165,7 @@ internal/
   docker/                     Docker client, containers, compose, actions
   kube/                       K8s client, pods, deployments, services, events
   log/                        StreamManager, RingBuffer, filter, highlight
+  export/                     Log export (text, JSON, file, OSC52 clipboard)
   config/                     YAML config loading
   discovery/                  Auto-detect backends
 pkg/messages/                 Shared tea.Msg types
