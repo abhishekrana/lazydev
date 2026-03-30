@@ -23,11 +23,11 @@ go build ./... # Build all packages (check compilation)
 - `internal/app/app.go` — SharedState: holds Docker/K8s clients, StreamManager, config
 - `internal/ui/root.go` — Root Bubble Tea model, handles tab switching and message dispatch
 - `internal/ui/theme/` — All styles (Lip Gloss) and keybindings in one package to avoid import cycles
-- `internal/ui/components/` — Reusable UI widgets: TabBar, Sidebar, LogView, StatusBar
-- `internal/ui/tabs/` — Tab models: DockerTab, (KubernetesTab, LogsTab, DashboardTab planned)
+- `internal/ui/components/` — Reusable UI widgets: TabBar, Sidebar, LogView, StatusBar, Modal, InputModal, DetailPane, Table, HelpOverlay, CmdPalette
+- `internal/ui/tabs/` — Tab models: DockerTab, KubeTab, LogsTab, DashboardTab
 - `internal/ui/layout/` — Split pane layout helpers
-- `internal/docker/` — Docker SDK wrapper: client, container list/logs/inspect, actions, compose grouping
-- `internal/kube/` — Kubernetes client-go wrapper (planned)
+- `internal/docker/` — Docker SDK wrapper: client, container list/logs/inspect/stats, actions, compose grouping
+- `internal/kube/` — Kubernetes client-go wrapper: pods, deployments, services, events, describe, scale
 - `internal/log/` — Log subsystem: StreamManager (goroutine lifecycle), RingBuffer, filter, highlight
 - `internal/config/` — YAML config struct and defaults
 - `internal/discovery/` — Auto-detect Docker daemon and kubeconfig at startup
@@ -51,5 +51,11 @@ go build ./... # Build all packages (check compilation)
 
 ## Current Status
 
-- Phase 1 complete: Docker tab with live log tailing, sidebar, search, container actions
-- Planned: Kubernetes tab, All Logs merged view, Dashboard tab, advanced actions (exec, port-forward, scale)
+All 7 phases complete:
+- Phase 1: Docker tab with live log tailing, sidebar, search, container actions
+- Phase 2: Collapsible groups, confirmation modal, inspect detail pane
+- Phase 3: Kubernetes tab with pod management, describe, YAML
+- Phase 4: Log level filtering (f key), search highlighting, All Logs merged tab
+- Phase 5: Dashboard tab with sortable table, Docker stats (CPU/mem)
+- Phase 6: Exec shell (x), port-forward (p), scale deployment (S)
+- Phase 7: Help overlay (?), command palette (:), goreleaser config

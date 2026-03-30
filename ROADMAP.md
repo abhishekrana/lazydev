@@ -11,7 +11,7 @@
 7. Log viewport with live tail
 8. **Milestone**: Run `lazydk`, see Docker containers, select one, see live logs
 
-## Phase 2: Docker Actions + Polish
+## Phase 2: Docker Actions + Polish [DONE]
 
 1. Collapsible groups in sidebar
 2. Confirmation modal for destructive actions
@@ -20,7 +20,7 @@
 5. Split pane toggle (logs <-> details)
 6. Error/success notifications in status bar
 
-## Phase 3: Kubernetes Integration
+## Phase 3: Kubernetes Integration [DONE]
 
 1. client-go setup with kubeconfig discovery
 2. Pod list, namespace grouping in sidebar
@@ -30,7 +30,7 @@
 6. Context switching between K8s clusters
 7. **Milestone**: Full K8s tab — browse resources, view pod logs, describe resources
 
-## Phase 4: Log Features
+## Phase 4: Log Features [DONE]
 
 1. Regex and text search (`/` key) with match highlighting
 2. Log level filtering (`f` key) — ERROR, WARN, INFO, DEBUG
@@ -40,7 +40,7 @@
 6. Source labels in merged view (color-coded per container/pod)
 7. **Milestone**: All Logs tab showing merged stream from Docker + K8s
 
-## Phase 5: Dashboard Tab
+## Phase 5: Dashboard Tab [DONE]
 
 1. Table component with sortable columns
 2. Columns: Name, Type, Source (Docker/K8s), Status, Health, Restarts, CPU, Memory
@@ -50,7 +50,7 @@
 6. Color-coded status indicators (green=healthy, red=crashed, yellow=pending)
 7. **Milestone**: Dashboard showing all resources at a glance with live metrics
 
-## Phase 6: Advanced Actions
+## Phase 6: Advanced Actions [DONE]
 
 1. Exec shell into container/pod (`x` key) via `tea.ExecProcess`
 2. Port-forward (`p` key) — background goroutine, shown in status bar
@@ -60,7 +60,7 @@
 6. K8s rollout restart
 7. **Milestone**: Full management actions matching k9s + lazydocker capabilities
 
-## Phase 7: Polish + Release
+## Phase 7: Polish + Release [DONE]
 
 1. Help overlay (`?` key) showing all keybindings
 2. Command palette (`:` mode) — `:exec`, `:scale 3`, `:filter ERROR`, etc.

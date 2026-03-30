@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -25,13 +27,15 @@ type Notifier interface {
 
 // RootModel is the top-level Bubble Tea model.
 type RootModel struct {
-	tabs      []TabModel
-	tabBar    components.TabBar
-	statusBar components.StatusBar
-	activeTab int
-	width     int
-	height    int
-	ready     bool
+	tabs       []TabModel
+	tabBar     components.TabBar
+	statusBar  components.StatusBar
+	help       components.HelpOverlay
+	cmdPalette components.CmdPalette
+	activeTab  int
+	width      int
+	height     int
+	ready      bool
 }
 
 // NewRootModel creates the root model with the given tabs.
@@ -42,9 +46,11 @@ func NewRootModel(tabs []TabModel) RootModel {
 	}
 
 	return RootModel{
-		tabs:      tabs,
-		tabBar:    components.NewTabBar(titles),
-		statusBar: components.NewStatusBar(),
+		tabs:       tabs,
+		tabBar:     components.NewTabBar(titles),
+		statusBar:  components.NewStatusBar(),
+		help:       components.NewHelpOverlay(),
+		cmdPalette: components.NewCmdPalette(),
 	}
 }
 
@@ -59,6 +65,18 @@ func (m RootModel) Init() tea.Cmd {
 
 // Update handles messages for the root model.
 func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Help overlay intercepts all input when visible.
+	if m.help.Visible() {
+		cmd := m.help.Update(msg)
+		return m, cmd
+	}
+
+	// Command palette intercepts all input when visible.
+	if m.cmdPalette.Visible() {
+		cmd := m.cmdPalette.Update(msg)
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -66,6 +84,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		m.tabBar.Width = m.width
 		m.statusBar.Width = m.width
+		m.help.SetSize(m.width, m.height)
+		m.cmdPalette.SetWidth(m.width)
 
 		contentHeight := m.contentHeight()
 		for i := range m.tabs {
@@ -77,6 +97,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
 			return m, tea.Quit
+		case key.Matches(msg, theme.Keys.Help):
+			m.help.Toggle()
+			return m, nil
+		case key.Matches(msg, theme.Keys.Command):
+			m.cmdPalette.Show(m.executeCommand)
+			return m, nil
 		case key.Matches(msg, theme.Keys.TabNext):
 			m.activeTab = (m.activeTab + 1) % len(m.tabs)
 			m.tabBar.ActiveTab = m.activeTab
@@ -131,10 +157,54 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// executeCommand handles commands from the command palette.
+func (m RootModel) executeCommand(cmd string, args []string) tea.Cmd {
+	switch strings.ToLower(cmd) {
+	case "quit", "q":
+		return tea.Quit
+	case "tab":
+		if len(args) > 0 {
+			for i, tab := range m.tabs {
+				if strings.EqualFold(tab.Title(), args[0]) {
+					return func() tea.Msg { return messages.SwitchTabMsg{Tab: i} }
+				}
+			}
+		}
+	case "docker":
+		return func() tea.Msg { return messages.SwitchTabMsg{Tab: 0} }
+	case "k8s", "kubernetes":
+		return func() tea.Msg { return messages.SwitchTabMsg{Tab: 1} }
+	case "logs":
+		for i, tab := range m.tabs {
+			if tab.Title() == "All Logs" {
+				idx := i
+				return func() tea.Msg { return messages.SwitchTabMsg{Tab: idx} }
+			}
+		}
+	case "dashboard":
+		for i, tab := range m.tabs {
+			if tab.Title() == "Dashboard" {
+				idx := i
+				return func() tea.Msg { return messages.SwitchTabMsg{Tab: idx} }
+			}
+		}
+	case "help":
+		m.help.Toggle()
+	}
+	return nil
+}
+
 // View renders the root model.
 func (m RootModel) View() tea.View {
 	if !m.ready {
 		v := tea.NewView("Starting lazydk...")
+		v.AltScreen = true
+		return v
+	}
+
+	// Help overlay covers everything.
+	if m.help.Visible() {
+		v := tea.NewView(m.help.View())
 		v.AltScreen = true
 		return v
 	}
@@ -148,7 +218,13 @@ func (m RootModel) View() tea.View {
 	}
 
 	tabBarView := m.tabBar.View()
-	statusBarView := m.statusBar.View()
+
+	var statusBarView string
+	if m.cmdPalette.Visible() {
+		statusBarView = m.cmdPalette.View()
+	} else {
+		statusBarView = m.statusBar.View()
+	}
 
 	var contentView string
 	if m.activeTab >= 0 && m.activeTab < len(m.tabs) {
