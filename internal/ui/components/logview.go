@@ -153,7 +153,8 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 		mouse := msg.Mouse()
 		filtered := l.visibleLines()
 		viewable := l.viewableHeight()
-		if mouse.Button == tea.MouseWheelUp {
+		switch mouse.Button {
+		case tea.MouseWheelUp:
 			l.autoScroll = false
 			l.offset -= 3
 			if l.offset < 0 {
@@ -166,7 +167,7 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 			if l.cursor < l.offset {
 				l.cursor = l.offset
 			}
-		} else if mouse.Button == tea.MouseWheelDown {
+		case tea.MouseWheelDown:
 			l.offset += 3
 			maxOffset := len(filtered) - viewable
 			if maxOffset < 0 {
