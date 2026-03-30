@@ -220,14 +220,26 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 		}
 	case msg.String() == "A":
 		if mr := t.findSelectedMR(); mr != nil {
-			return t, t.approveMR(mr.IID)
+			iid := mr.IID
+			t.modal.Show("Approve MR", fmt.Sprintf("Approve !%d %s?", mr.IID, mr.Title), func() tea.Cmd {
+				return t.approveMR(iid)
+			})
+			return t, nil
 		}
 	case msg.String() == "s":
 		if mr := t.findSelectedMR(); mr != nil {
 			if mr.State == "opened" {
-				return t, t.closeMR(mr.IID)
+				iid := mr.IID
+				t.modal.Show("Close MR", fmt.Sprintf("Close !%d %s?", mr.IID, mr.Title), func() tea.Cmd {
+					return t.closeMR(iid)
+				})
+			} else {
+				iid := mr.IID
+				t.modal.Show("Reopen MR", fmt.Sprintf("Reopen !%d %s?", mr.IID, mr.Title), func() tea.Cmd {
+					return t.reopenMR(iid)
+				})
 			}
-			return t, t.reopenMR(mr.IID)
+			return t, nil
 		}
 	case msg.String() == "c":
 		if mr := t.findSelectedMR(); mr != nil {

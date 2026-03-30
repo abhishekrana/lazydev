@@ -254,11 +254,19 @@ func (t *PipelinesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd)
 		}
 	case msg.String() == "R":
 		if p := t.findSelectedPipeline(); p != nil {
-			return t, t.retryPipeline(p.ID)
+			pid := p.ID
+			t.modal.Show("Retry Pipeline", fmt.Sprintf("Retry pipeline #%d?", p.ID), func() tea.Cmd {
+				return t.retryPipeline(pid)
+			})
+			return t, nil
 		}
 	case msg.String() == "C":
 		if p := t.findSelectedPipeline(); p != nil {
-			return t, t.cancelPipeline(p.ID)
+			pid := p.ID
+			t.modal.Show("Cancel Pipeline", fmt.Sprintf("Cancel pipeline #%d?", p.ID), func() tea.Cmd {
+				return t.cancelPipeline(pid)
+			})
+			return t, nil
 		}
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()

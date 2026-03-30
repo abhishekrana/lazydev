@@ -214,9 +214,17 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 	case msg.String() == "s":
 		if issue := t.findSelectedIssue(); issue != nil {
 			if issue.State == "opened" {
-				return t, t.closeIssue(issue.IID)
+				iid := issue.IID
+				t.modal.Show("Close Issue", fmt.Sprintf("Close #%d %s?", issue.IID, issue.Title), func() tea.Cmd {
+					return t.closeIssue(iid)
+				})
+			} else {
+				iid := issue.IID
+				t.modal.Show("Reopen Issue", fmt.Sprintf("Reopen #%d %s?", issue.IID, issue.Title), func() tea.Cmd {
+					return t.reopenIssue(iid)
+				})
 			}
-			return t, t.reopenIssue(issue.IID)
+			return t, nil
 		}
 	case msg.String() == "c":
 		if issue := t.findSelectedIssue(); issue != nil {
@@ -224,7 +232,11 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 		}
 	case msg.String() == "a":
 		if issue := t.findSelectedIssue(); issue != nil {
-			return t, t.assignToSelf(issue.IID)
+			iid := issue.IID
+			t.modal.Show("Assign Issue", fmt.Sprintf("Assign #%d to yourself?", issue.IID), func() tea.Cmd {
+				return t.assignToSelf(iid)
+			})
+			return t, nil
 		}
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()
@@ -252,7 +264,11 @@ func (t *IssuesTab) View() string {
 	right := t.detailPane.View()
 
 	_ = rightWidth
-	return joinHorizontal(left, right, t.height)
+	view := joinHorizontal(left, right, t.height)
+	if t.modal.Visible() {
+		return t.modal.View()
+	}
+	return view
 }
 
 // Notification implements the Notifier interface.
