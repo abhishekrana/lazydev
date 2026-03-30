@@ -116,20 +116,20 @@ var (
 			Bold(true)
 )
 
-// StateIcon returns a colored status icon.
-func StateIcon(state string) string {
+// StateIcon returns a colored status icon for a ContainerState enum.
+func StateIcon(state int) string {
 	switch state {
-	case "running", "Running":
+	case 1: // StateRunning
 		return StateRunningStyle.Render("●")
-	case "exited", "Stopped", "stopped":
+	case 2: // StateStopped
 		return StateStoppedStyle.Render("○")
-	case "error", "Error", "CrashLoopBackOff":
+	case 3: // StateError
 		return StateErrorStyle.Render("✗")
-	case "pending", "Pending", "ContainerCreating":
+	case 4: // StatePending
 		return StatePendingStyle.Render("◌")
-	case "restarting", "Restarting":
+	case 5: // StateRestarting
 		return StateRunningStyle.Render("↻")
-	default:
-		return StateStoppedStyle.Render("?")
+	default: // StateUnknown
+		return StatePendingStyle.Render("◌")
 	}
 }

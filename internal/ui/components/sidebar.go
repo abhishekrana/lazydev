@@ -14,7 +14,7 @@ import (
 type SidebarItem struct {
 	ID    string
 	Name  string
-	State string
+	State messages.ContainerState
 	Group string
 }
 
@@ -65,7 +65,7 @@ func (s *Sidebar) SetItems(containers []messages.Container) {
 		s.items[i] = SidebarItem{
 			ID:    c.ID,
 			Name:  c.Name,
-			State: c.Status,
+			State: c.State,
 			Group: group,
 		}
 
@@ -231,13 +231,15 @@ func (s Sidebar) View() string {
 			}
 		} else {
 			item := s.items[row.itemIdx]
-			icon := theme.StateIcon(item.State)
 			name := truncate(item.Name, s.width-6)
-			line := fmt.Sprintf("%s %s", icon, name)
 
 			if i == s.cursor && s.focused {
+				// Selected: render plain text with full-row highlight (no separate icon styling).
+				line := fmt.Sprintf("● %s", name)
 				b.WriteString(theme.SidebarSelectedStyle.Width(s.width).Render(line))
 			} else {
+				icon := theme.StateIcon(int(item.State))
+				line := fmt.Sprintf("%s %s", icon, name)
 				b.WriteString(theme.SidebarItemStyle.Width(s.width).Render(line))
 			}
 		}

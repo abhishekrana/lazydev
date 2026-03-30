@@ -237,7 +237,7 @@ func (t Table) renderHeader() string {
 }
 
 func (t Table) renderRow(row messages.DashboardRow, selected bool) string {
-	stateIcon := theme.StateIcon(row.Status)
+	stateIcon := theme.StateIcon(int(row.State))
 	cells := []string{
 		padRight(row.Name, t.columns[0].Width),
 		padRight(row.Type, t.columns[1].Width),
