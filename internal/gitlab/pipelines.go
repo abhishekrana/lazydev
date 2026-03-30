@@ -13,25 +13,14 @@ import (
 // ListMyPipelines returns MR pipelines triggered by the tracked users,
 // filtered to only merge-request refs and deduped to latest per MR+type.
 func (c *Client) ListMyPipelines() ([]messages.GitLabPipeline, error) {
-	seen := make(map[int64]bool)
-	var all []messages.GitLabPipeline
-
-	for _, username := range c.Usernames {
-		opts := &gitlab.ListProjectPipelinesOptions{
-			ListOptions: gitlab.ListOptions{PerPage: 50},
-			Username:    gitlab.Ptr(username),
-		}
-		raw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, opts)
-		if err != nil {
-			continue
-		}
-		for _, p := range convertPipelines(raw) {
-			if !seen[p.ID] {
-				seen[p.ID] = true
-				all = append(all, p)
-			}
-		}
+	// Fetch recent pipelines (covers all triggers including CI bots and merge trains).
+	raw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, &gitlab.ListProjectPipelinesOptions{
+		ListOptions: gitlab.ListOptions{PerPage: 100},
+	})
+	if err != nil {
+		return nil, err
 	}
+	all := convertPipelines(raw)
 
 	// Filter to MR pipelines only, keep latest per MR+type.
 	seenMRType := make(map[string]bool)
@@ -47,7 +36,44 @@ func (c *Client) ListMyPipelines() ([]messages.GitLabPipeline, error) {
 		}
 	}
 
+	// Bulk fetch open MRs to resolve IID → title (one API call).
+	mrTitles := c.fetchMRTitles()
+	for i := range result {
+		if title, ok := mrTitles[result[i].MRIid]; ok {
+			result[i].MRTitle = title
+		}
+	}
+
 	return result, nil
+}
+
+// fetchMRTitles fetches open and recently merged MRs and returns a map of IID (as string) → title.
+func (c *Client) fetchMRTitles() map[string]string {
+	titles := make(map[string]string)
+	// Fetch open MRs.
+	opened, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, &gitlab.ListProjectMergeRequestsOptions{
+		State:       gitlab.Ptr("opened"),
+		ListOptions: gitlab.ListOptions{PerPage: 100},
+	})
+	if err == nil {
+		for _, mr := range opened {
+			titles[fmt.Sprintf("%d", mr.IID)] = mr.Title
+		}
+	}
+	// Fetch recently merged MRs.
+	merged, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, &gitlab.ListProjectMergeRequestsOptions{
+		State:       gitlab.Ptr("merged"),
+		ListOptions: gitlab.ListOptions{PerPage: 50},
+	})
+	if err == nil {
+		for _, mr := range merged {
+			iid := fmt.Sprintf("%d", mr.IID)
+			if _, exists := titles[iid]; !exists {
+				titles[iid] = mr.Title
+			}
+		}
+	}
+	return titles
 }
 
 // GetPipelineJobs returns the jobs for a pipeline.
@@ -142,7 +168,11 @@ func FormatPipelineDetail(pipeline messages.GitLabPipeline, jobs []messages.GitL
 
 	fmt.Fprintf(&b, "Ref:     %s\n", pipeline.Ref)
 	if pipeline.MRIid != "" {
-		fmt.Fprintf(&b, "MR:      !%s [%s]\n", pipeline.MRIid, pipeline.PipelineType)
+		mrLine := fmt.Sprintf("!%s [%s]", pipeline.MRIid, pipeline.PipelineType)
+		if pipeline.MRTitle != "" {
+			mrLine = fmt.Sprintf("!%s %s [%s]", pipeline.MRIid, pipeline.MRTitle, pipeline.PipelineType)
+		}
+		fmt.Fprintf(&b, "MR:      %s\n", mrLine)
 	}
 	if pipeline.SHA != "" {
 		sha := pipeline.SHA
