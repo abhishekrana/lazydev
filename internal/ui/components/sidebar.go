@@ -37,6 +37,7 @@ type Sidebar struct {
 	width      int
 	height     int
 	focused    bool
+	yOffset    int // screen Y offset (e.g. tab bar height)
 }
 
 // NewSidebar creates a new sidebar.
@@ -121,6 +122,11 @@ func (s *Sidebar) SetSize(width, height int) {
 	s.height = height
 }
 
+// SetYOffset sets the screen Y offset for mouse click mapping (e.g. tab bar height).
+func (s *Sidebar) SetYOffset(offset int) {
+	s.yOffset = offset
+}
+
 // SetFocused sets whether the sidebar has focus.
 func (s *Sidebar) SetFocused(focused bool) {
 	s.focused = focused
@@ -136,8 +142,8 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
-		// Map click Y to row index (relative to sidebar area).
-		clickedRow := mouse.Y + s.offset
+		// Map click Y to row index, adjusting for screen offset (tab bar).
+		clickedRow := mouse.Y - s.yOffset + s.offset
 		if clickedRow >= 0 && clickedRow < len(s.rows) {
 			s.cursor = clickedRow
 			// Toggle group on click.

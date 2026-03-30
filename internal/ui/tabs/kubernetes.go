@@ -76,6 +76,7 @@ func (t *KubeTab) SetSize(width, height int) {
 	}
 	rightWidth := width - sidebarWidth
 	t.sidebar.SetSize(sidebarWidth, height)
+	t.sidebar.SetYOffset(2) // tab bar height
 	t.logView.SetSize(rightWidth, height)
 	t.detailPane.SetSize(rightWidth, height)
 	t.modal.SetSize(width, height)
