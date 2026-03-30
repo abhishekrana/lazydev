@@ -86,11 +86,10 @@ func (h HelpOverlay) View() string {
 			keys: [][2]string{
 				{"j / ↓", "Move down"},
 				{"k / ↑", "Move up"},
-				{"h / ←", "Focus sidebar"},
-				{"l / →", "Focus log/detail pane"},
+				{"Ctrl+W W", "Switch pane focus"},
 				{"Enter", "Select / collapse group"},
 				{"Esc", "Back / cancel"},
-				{"g", "Scroll to top"},
+				{"gg", "Scroll to top"},
 				{"G", "Scroll to bottom (auto-follow)"},
 			},
 		},

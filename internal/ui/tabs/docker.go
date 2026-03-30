@@ -42,6 +42,7 @@ type DockerTab struct {
 	selectedName string
 	containers   []messages.Container
 	notification string
+	pendingCtrlW bool
 }
 
 // NewDockerTab creates a new Docker tab.
@@ -183,6 +184,20 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, nil
 
 	case tea.KeyPressMsg:
+		// Ctrl+W W to toggle pane focus (vim-style).
+		s := msg.String()
+		if t.pendingCtrlW {
+			t.pendingCtrlW = false
+			if s == "w" || s == "W" || s == "ctrl+w" || s == "ctrl+W" {
+				t.toggleFocus()
+				return t, nil
+			}
+		}
+		if s == "ctrl+w" || s == "ctrl+W" {
+			t.pendingCtrlW = true
+			return t, nil
+		}
+
 		// Global keys for this tab (regardless of focus).
 		switch {
 		case key.Matches(msg, theme.Keys.Describe):
@@ -202,15 +217,6 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 
 		if t.focusSidebar {
 			switch {
-			case key.Matches(msg, theme.Keys.Right):
-				t.focusSidebar = false
-				t.sidebar.SetFocused(false)
-				if t.rightPane == paneDetail {
-					t.detailPane.SetFocused(true)
-				} else {
-					t.logView.SetFocused(true)
-				}
-				return t, nil
 			case key.Matches(msg, theme.Keys.Enter):
 				// Let sidebar handle group collapse first.
 				cmd := t.sidebar.Update(msg)
@@ -261,15 +267,6 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 				cmds = append(cmds, t.selectContainer(item.ID, item.Name))
 			}
 		} else {
-			switch {
-			case key.Matches(msg, theme.Keys.Left):
-				t.focusSidebar = true
-				t.sidebar.SetFocused(true)
-				t.logView.SetFocused(false)
-				t.detailPane.SetFocused(false)
-				return t, nil
-			}
-
 			if t.rightPane == paneDetail {
 				cmd := t.detailPane.Update(msg)
 				cmds = append(cmds, cmd)
@@ -313,6 +310,19 @@ func (t *DockerTab) View() string {
 }
 
 // --- notifications ---
+
+func (t *DockerTab) toggleFocus() {
+	t.focusSidebar = !t.focusSidebar
+	t.sidebar.SetFocused(t.focusSidebar)
+	if t.focusSidebar {
+		t.logView.SetFocused(false)
+		t.detailPane.SetFocused(false)
+	} else if t.rightPane == paneDetail {
+		t.detailPane.SetFocused(true)
+	} else {
+		t.logView.SetFocused(true)
+	}
+}
 
 func (t *DockerTab) setNotification(msg string) {
 	t.notification = msg

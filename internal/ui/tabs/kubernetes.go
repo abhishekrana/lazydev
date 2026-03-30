@@ -44,6 +44,7 @@ type KubeTab struct {
 	selectedName string
 	containers   []messages.Container
 	notification string
+	pendingCtrlW bool
 }
 
 // NewKubeTab creates a new Kubernetes tab.
@@ -194,6 +195,20 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, nil
 
 	case tea.KeyPressMsg:
+		// Ctrl+W W to toggle pane focus (vim-style).
+		s := msg.String()
+		if t.pendingCtrlW {
+			t.pendingCtrlW = false
+			if s == "w" || s == "W" || s == "ctrl+w" || s == "ctrl+W" {
+				t.toggleFocus()
+				return t, nil
+			}
+		}
+		if s == "ctrl+w" || s == "ctrl+W" {
+			t.pendingCtrlW = true
+			return t, nil
+		}
+
 		// Global keys for this tab.
 		switch {
 		case key.Matches(msg, theme.Keys.Describe):
@@ -216,15 +231,6 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 
 		if t.focusSidebar {
 			switch {
-			case key.Matches(msg, theme.Keys.Right):
-				t.focusSidebar = false
-				t.sidebar.SetFocused(false)
-				if t.rightPane == kubeRightDetail {
-					t.detailPane.SetFocused(true)
-				} else {
-					t.logView.SetFocused(true)
-				}
-				return t, nil
 			case key.Matches(msg, theme.Keys.Enter):
 				cmd := t.sidebar.Update(msg)
 				if item, ok := t.sidebar.SelectedItem(); ok {
@@ -287,15 +293,6 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 				cmds = append(cmds, t.selectPod(item.ID, item.Name, item.Group))
 			}
 		} else {
-			switch {
-			case key.Matches(msg, theme.Keys.Left):
-				t.focusSidebar = true
-				t.sidebar.SetFocused(true)
-				t.logView.SetFocused(false)
-				t.detailPane.SetFocused(false)
-				return t, nil
-			}
-
 			if t.rightPane == kubeRightDetail {
 				cmd := t.detailPane.Update(msg)
 				cmds = append(cmds, cmd)
@@ -344,6 +341,19 @@ func (t *KubeTab) View() string {
 // Notification implements the Notifier interface.
 func (t *KubeTab) Notification() string {
 	return t.notification
+}
+
+func (t *KubeTab) toggleFocus() {
+	t.focusSidebar = !t.focusSidebar
+	t.sidebar.SetFocused(t.focusSidebar)
+	if t.focusSidebar {
+		t.logView.SetFocused(false)
+		t.detailPane.SetFocused(false)
+	} else if t.rightPane == kubeRightDetail {
+		t.detailPane.SetFocused(true)
+	} else {
+		t.logView.SetFocused(true)
+	}
 }
 
 func (t *KubeTab) setNotification(msg string) {
