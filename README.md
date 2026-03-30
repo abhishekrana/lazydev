@@ -116,9 +116,10 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 
 ### GitLab (common)
 
-| Key      | Action         |
-| -------- | -------------- |
-| `Ctrl+R` | Manual refresh |
+| Key | Action          |
+| --- | --------------- |
+| `r` | Manual refresh  |
+| `o` | Open in browser |
 
 ### GitLab Issues
 
@@ -129,28 +130,25 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 | `a` | Assign to self            |
 | `l` | Set labels                |
 | `n` | Create new issue          |
-| `o` | Open in browser           |
 
 ### GitLab MRs
 
 | Key | Action                          |
 | --- | ------------------------------- |
-| `r` | Review in neovim (DiffviewOpen) |
+| `R` | Review in neovim (DiffviewOpen) |
 | `m` | Merge (with confirmation)       |
 | `A` | Approve                         |
 | `s` | Close/reopen                    |
 | `c` | Comment (opens `$EDITOR`)       |
-| `o` | Open in browser                 |
 
 ### GitLab Pipelines
 
-| Key     | Action                                    |
-| ------- | ----------------------------------------- |
-| `Enter` | View jobs / job log                       |
-| `Esc`   | Back to job list                          |
-| `R`     | Retry failed pipeline                     |
-| `C`     | Cancel running pipeline                   |
-| `o`     | Open in browser                           |
+| Key     | Action                  |
+| ------- | ----------------------- |
+| `Enter` | View jobs / job log     |
+| `Esc`   | Back to job list        |
+| `R`     | Retry failed pipeline   |
+| `C`     | Cancel running pipeline |
 
 ### Detail Pane
 
