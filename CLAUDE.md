@@ -7,6 +7,7 @@
 ## Build & Run
 
 ```bash
+make init      # Install dev tools (goimports, golangci-lint) and tidy deps
 make build     # Build binary (output: ./lazydev)
 make run       # Build and run
 make clean     # Remove binary

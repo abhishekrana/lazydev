@@ -1,7 +1,12 @@
 BINARY := lazydev
 GOFLAGS := -ldflags="-s -w"
 
-.PHONY: build run clean tidy fmt lint check
+.PHONY: init build run clean tidy fmt lint check
+
+init:
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go mod tidy
 
 build:
 	go build $(GOFLAGS) -o $(BINARY) ./cmd/lazydev/
