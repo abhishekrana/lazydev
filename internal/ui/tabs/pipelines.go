@@ -98,15 +98,9 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		t.pipelines = nil
 		var containers []messages.Container
-		for _, p := range msg.Mine {
+		for _, p := range msg.Pipelines {
 			t.pipelines = append(t.pipelines, p)
 			containers = append(containers, pipelineToContainer(p, "My pipelines"))
-		}
-		for _, p := range msg.All {
-			if !pipelineInList(p, msg.Mine) {
-				t.pipelines = append(t.pipelines, p)
-				containers = append(containers, pipelineToContainer(p, "All pipelines"))
-			}
 		}
 		t.sidebar.SetItems(containers)
 		// Flag auto-select for when the tab becomes active.
@@ -335,8 +329,8 @@ func (t *PipelinesTab) toggleFocus() {
 
 func (t *PipelinesTab) fetchPipelines() tea.Cmd {
 	return func() tea.Msg {
-		mine, all, err := t.client.ListMyPipelines()
-		return messages.PipelineListMsg{Mine: mine, All: all, Err: err}
+		pipelines, err := t.client.ListMyPipelines()
+		return messages.PipelineListMsg{Pipelines: pipelines, Err: err}
 	}
 }
 
@@ -416,7 +410,12 @@ func pipelineToContainer(p messages.GitLabPipeline, group string) messages.Conta
 		state = messages.StateStopped
 	}
 	icon := gitlabpkg.PipelineStatusIcon(p.Status)
-	name := fmt.Sprintf("#%d %s %s", p.ID, p.Ref, icon)
+	var name string
+	if p.MRIid != "" {
+		name = fmt.Sprintf("#%d !%s [%s] %s", p.ID, p.MRIid, p.PipelineType, icon)
+	} else {
+		name = fmt.Sprintf("#%d %s %s", p.ID, p.Ref, icon)
+	}
 	age := relativeTime(p.CreatedAt)
 	if age != "" {
 		name += " " + age
@@ -427,15 +426,6 @@ func pipelineToContainer(p messages.GitLabPipeline, group string) messages.Conta
 		State: state,
 		Group: group,
 	}
-}
-
-func pipelineInList(p messages.GitLabPipeline, list []messages.GitLabPipeline) bool {
-	for _, pp := range list {
-		if pp.ID == p.ID {
-			return true
-		}
-	}
-	return false
 }
 
 func convertJobLogToLines(log string, jobID int64) []messages.LogLine {

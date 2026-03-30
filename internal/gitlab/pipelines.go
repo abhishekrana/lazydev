@@ -10,14 +10,15 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// ListMyPipelines returns pipelines triggered by the authenticated user and all recent pipelines.
-func (c *Client) ListMyPipelines() (mine, all []messages.GitLabPipeline, err error) {
+// ListMyPipelines returns MR pipelines triggered by the tracked users,
+// filtered to only merge-request refs and deduped to latest per MR+type.
+func (c *Client) ListMyPipelines() ([]messages.GitLabPipeline, error) {
 	seen := make(map[int64]bool)
+	var all []messages.GitLabPipeline
 
-	// My pipelines (from all tracked users).
 	for _, username := range c.Usernames {
 		opts := &gitlab.ListProjectPipelinesOptions{
-			ListOptions: gitlab.ListOptions{PerPage: 30},
+			ListOptions: gitlab.ListOptions{PerPage: 50},
 			Username:    gitlab.Ptr(username),
 		}
 		raw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, opts)
@@ -27,20 +28,26 @@ func (c *Client) ListMyPipelines() (mine, all []messages.GitLabPipeline, err err
 		for _, p := range convertPipelines(raw) {
 			if !seen[p.ID] {
 				seen[p.ID] = true
-				mine = append(mine, p)
+				all = append(all, p)
 			}
 		}
 	}
 
-	// All pipelines.
-	allRaw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, &gitlab.ListProjectPipelinesOptions{
-		ListOptions: gitlab.ListOptions{PerPage: 30},
-	})
-	if err == nil {
-		all = convertPipelines(allRaw)
+	// Filter to MR pipelines only and dedup to latest per MR+type.
+	dedupKey := make(map[string]bool)
+	var result []messages.GitLabPipeline
+	for _, p := range all {
+		if p.MRIid == "" {
+			continue
+		}
+		key := p.MRIid + "/" + p.PipelineType
+		if !dedupKey[key] {
+			dedupKey[key] = true
+			result = append(result, p)
+		}
 	}
 
-	return mine, all, nil
+	return result, nil
 }
 
 // GetPipelineJobs returns the jobs for a pipeline.
@@ -93,18 +100,37 @@ func (c *Client) CancelPipeline(pipelineID int64) error {
 }
 
 func convertPipelines(raw []*gitlab.PipelineInfo) []messages.GitLabPipeline {
-	result := make([]messages.GitLabPipeline, len(raw))
-	for i, p := range raw {
-		result[i] = messages.GitLabPipeline{
-			ID:        p.ID,
-			Status:    p.Status,
-			Ref:       p.Ref,
-			SHA:       p.SHA,
-			WebURL:    p.WebURL,
-			CreatedAt: safeTime(p.CreatedAt),
-		}
+	result := make([]messages.GitLabPipeline, 0, len(raw))
+	for _, p := range raw {
+		mrIID, pipelineType, _ := parseMRRef(p.Ref)
+		result = append(result, messages.GitLabPipeline{
+			ID:           p.ID,
+			Status:       p.Status,
+			Ref:          p.Ref,
+			SHA:          p.SHA,
+			WebURL:       p.WebURL,
+			CreatedAt:    safeTime(p.CreatedAt),
+			MRIid:        mrIID,
+			PipelineType: pipelineType,
+		})
 	}
 	return result
+}
+
+// parseMRRef extracts MR IID and pipeline type from a merge request ref.
+// Returns ("1353", "merge", true) for "refs/merge-requests/1353/merge".
+// Returns ("", "", false) for non-MR refs like "main".
+func parseMRRef(ref string) (mrIID string, pipelineType string, ok bool) {
+	const prefix = "refs/merge-requests/"
+	if !strings.HasPrefix(ref, prefix) {
+		return "", "", false
+	}
+	rest := ref[len(prefix):]
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 // FormatPipelineDetail formats a pipeline and its jobs for the detail pane.
@@ -115,6 +141,9 @@ func FormatPipelineDetail(pipeline messages.GitLabPipeline, jobs []messages.GitL
 	b.WriteString(strings.Repeat("─", 60) + "\n")
 
 	fmt.Fprintf(&b, "Ref:     %s\n", pipeline.Ref)
+	if pipeline.MRIid != "" {
+		fmt.Fprintf(&b, "MR:      !%s [%s]\n", pipeline.MRIid, pipeline.PipelineType)
+	}
 	if pipeline.SHA != "" {
 		sha := pipeline.SHA
 		if len(sha) > 8 {

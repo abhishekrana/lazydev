@@ -218,6 +218,8 @@ type GitLabPipeline struct {
 	Duration      float64
 	CreatedAt     time.Time
 	FinishedAt    time.Time
+	MRIid         string // parsed from ref, e.g. "1353" (empty for non-MR pipelines)
+	PipelineType  string // "merge", "train", "head" (empty for non-MR pipelines)
 }
 
 // GitLabJob represents a job within a pipeline.
@@ -302,9 +304,8 @@ type MRActionMsg struct {
 
 // PipelineListMsg delivers pipeline lists from GitLab.
 type PipelineListMsg struct {
-	Mine []GitLabPipeline
-	All  []GitLabPipeline
-	Err  error
+	Pipelines []GitLabPipeline
+	Err       error
 }
 
 // PipelineJobsMsg delivers jobs for a pipeline.
