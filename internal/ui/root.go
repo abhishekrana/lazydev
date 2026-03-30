@@ -18,6 +18,11 @@ type TabModel interface {
 	SetSize(width, height int)
 }
 
+// Notifier is an optional interface tabs can implement to show status bar messages.
+type Notifier interface {
+	Notification() string
+}
+
 // RootModel is the top-level Bubble Tea model.
 type RootModel struct {
 	tabs      []TabModel
@@ -119,6 +124,14 @@ func (m RootModel) View() tea.View {
 		v := tea.NewView("Starting lazydk...")
 		v.AltScreen = true
 		return v
+	}
+
+	// Pull notification from active tab if it implements Notifier.
+	m.statusBar.Message = ""
+	if m.activeTab >= 0 && m.activeTab < len(m.tabs) {
+		if n, ok := m.tabs[m.activeTab].(Notifier); ok {
+			m.statusBar.Message = n.Notification()
+		}
 	}
 
 	tabBarView := m.tabBar.View()

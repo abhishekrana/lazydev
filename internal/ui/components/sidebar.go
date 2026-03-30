@@ -18,12 +18,21 @@ type SidebarItem struct {
 	Group string
 }
 
-// Sidebar is a grouped list sidebar component.
+// displayRow represents a row in the flattened sidebar view.
+type displayRow struct {
+	isGroup bool
+	group   string
+	itemIdx int // index into s.items, only valid when !isGroup
+}
+
+// Sidebar is a grouped list sidebar component with collapsible groups.
 type Sidebar struct {
 	items      []SidebarItem
 	groups     []string
 	groupItems map[string][]int
-	cursor     int
+	collapsed  map[string]bool
+	rows       []displayRow // flattened display rows
+	cursor     int          // index into rows
 	offset     int
 	width      int
 	height     int
@@ -34,6 +43,7 @@ type Sidebar struct {
 func NewSidebar() Sidebar {
 	return Sidebar{
 		groupItems: make(map[string][]int),
+		collapsed:  make(map[string]bool),
 	}
 }
 
@@ -65,17 +75,44 @@ func (s *Sidebar) SetItems(containers []messages.Container) {
 		s.groupItems[group] = append(s.groupItems[group], i)
 	}
 
-	if s.cursor >= len(s.items) {
-		s.cursor = max(0, len(s.items)-1)
+	s.rebuildRows()
+
+	if s.cursor >= len(s.rows) {
+		s.cursor = max(0, len(s.rows)-1)
+	}
+}
+
+// rebuildRows flattens groups + items into display rows respecting collapsed state.
+func (s *Sidebar) rebuildRows() {
+	s.rows = nil
+	for _, group := range s.groups {
+		indices := s.groupItems[group]
+		if len(indices) == 0 {
+			continue
+		}
+		s.rows = append(s.rows, displayRow{isGroup: true, group: group})
+		if !s.collapsed[group] {
+			for _, idx := range indices {
+				s.rows = append(s.rows, displayRow{isGroup: false, group: group, itemIdx: idx})
+			}
+		}
 	}
 }
 
 // SelectedItem returns the currently selected item, if any.
+// Returns false if cursor is on a group header or no items exist.
 func (s Sidebar) SelectedItem() (SidebarItem, bool) {
-	if len(s.items) == 0 || s.cursor < 0 || s.cursor >= len(s.items) {
+	if len(s.rows) == 0 || s.cursor < 0 || s.cursor >= len(s.rows) {
 		return SidebarItem{}, false
 	}
-	return s.items[s.cursor], true
+	row := s.rows[s.cursor]
+	if row.isGroup {
+		return SidebarItem{}, false
+	}
+	if row.itemIdx < 0 || row.itemIdx >= len(s.items) {
+		return SidebarItem{}, false
+	}
+	return s.items[row.itemIdx], true
 }
 
 // SetSize sets the sidebar dimensions.
@@ -108,8 +145,18 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 				s.cursor--
 			}
 		case key.Matches(msg, theme.Keys.Down):
-			if s.cursor < len(s.items)-1 {
+			if s.cursor < len(s.rows)-1 {
 				s.cursor++
+			}
+		case key.Matches(msg, theme.Keys.Enter):
+			// Toggle collapse on group headers.
+			if s.cursor >= 0 && s.cursor < len(s.rows) && s.rows[s.cursor].isGroup {
+				group := s.rows[s.cursor].group
+				s.collapsed[group] = !s.collapsed[group]
+				s.rebuildRows()
+				if s.cursor >= len(s.rows) {
+					s.cursor = len(s.rows) - 1
+				}
 			}
 		}
 	}
@@ -119,7 +166,7 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 
 // View renders the sidebar.
 func (s Sidebar) View() string {
-	if len(s.items) == 0 {
+	if len(s.rows) == 0 {
 		return theme.SidebarStyle.
 			Width(s.width).
 			Height(s.height).
@@ -127,9 +174,9 @@ func (s Sidebar) View() string {
 	}
 
 	var b strings.Builder
-	lineCount := 0
 	visibleHeight := s.height
 
+	// Ensure cursor is visible.
 	if s.cursor < s.offset {
 		s.offset = s.cursor
 	}
@@ -137,40 +184,45 @@ func (s Sidebar) View() string {
 		s.offset = s.cursor - visibleHeight + 1
 	}
 
-	currentLine := 0
-	for _, group := range s.groups {
-		indices := s.groupItems[group]
-		if len(indices) == 0 {
-			continue
-		}
-
-		if currentLine >= s.offset && lineCount < visibleHeight {
-			header := fmt.Sprintf("▼ %s  (%d)", group, len(indices))
-			b.WriteString(theme.SidebarGroupStyle.Width(s.width).Render(header))
-			b.WriteString("\n")
-			lineCount++
-		}
-		currentLine++
-
-		for _, idx := range indices {
-			if currentLine >= s.offset && lineCount < visibleHeight {
-				item := s.items[idx]
-				icon := theme.StateIcon(item.State)
-				name := truncate(item.Name, s.width-6)
-				line := fmt.Sprintf("%s %s", icon, name)
-
-				if idx == s.cursor && s.focused {
-					b.WriteString(theme.SidebarSelectedStyle.Width(s.width).Render(line))
-				} else {
-					b.WriteString(theme.SidebarItemStyle.Width(s.width).Render(line))
-				}
-				b.WriteString("\n")
-				lineCount++
-			}
-			currentLine++
-		}
+	end := s.offset + visibleHeight
+	if end > len(s.rows) {
+		end = len(s.rows)
 	}
 
+	lineCount := 0
+	for i := s.offset; i < end; i++ {
+		row := s.rows[i]
+
+		if row.isGroup {
+			arrow := "▼"
+			if s.collapsed[row.group] {
+				arrow = "▶"
+			}
+			count := len(s.groupItems[row.group])
+			header := fmt.Sprintf("%s %s  (%d)", arrow, row.group, count)
+
+			if i == s.cursor && s.focused {
+				b.WriteString(theme.SidebarSelectedStyle.Width(s.width).Render(header))
+			} else {
+				b.WriteString(theme.SidebarGroupStyle.Width(s.width).Render(header))
+			}
+		} else {
+			item := s.items[row.itemIdx]
+			icon := theme.StateIcon(item.State)
+			name := truncate(item.Name, s.width-6)
+			line := fmt.Sprintf("%s %s", icon, name)
+
+			if i == s.cursor && s.focused {
+				b.WriteString(theme.SidebarSelectedStyle.Width(s.width).Render(line))
+			} else {
+				b.WriteString(theme.SidebarItemStyle.Width(s.width).Render(line))
+			}
+		}
+		b.WriteString("\n")
+		lineCount++
+	}
+
+	// Pad remaining space.
 	for lineCount < visibleHeight {
 		b.WriteString(strings.Repeat(" ", s.width))
 		b.WriteString("\n")
