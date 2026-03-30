@@ -285,11 +285,11 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		}
 	}
 
-	baseURL := projectBaseURL(issue.WebURL)
+	hostURL := gitlabHostURL(issue.WebURL)
 
 	if issue.Description != "" {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString(renderMarkdown(issue.Description, baseURL))
+		b.WriteString(renderMarkdown(issue.Description, hostURL, issue.ProjectID))
 	}
 
 	if len(notes) > 0 {
@@ -298,7 +298,7 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
 			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body, baseURL))
+			b.WriteString(renderMarkdown(note.Body, hostURL, issue.ProjectID))
 		}
 	}
 
@@ -311,31 +311,41 @@ var relativeURLPattern = regexp.MustCompile(`(\[.*?\]\()(/[^)]+)\)`)
 // gitlabImageAttrsPattern strips GitLab-specific image attributes like {width=900 height=492}
 var gitlabImageAttrsPattern = regexp.MustCompile(`\)\{[^}]*\}`)
 
-// projectBaseURL extracts the project URL from a resource WebURL.
-// e.g. "https://gitlab.com/group/project/-/issues/123" → "https://gitlab.com/group/project"
-func projectBaseURL(webURL string) string {
-	if idx := strings.Index(webURL, "/-/"); idx != -1 {
-		return webURL[:idx]
+// gitlabHostURL extracts the host URL from a resource WebURL.
+// e.g. "https://gitlab.com/group/project/-/issues/123" → "https://gitlab.com"
+func gitlabHostURL(webURL string) string {
+	// Find scheme + host: https://gitlab.com
+	if idx := strings.Index(webURL, "://"); idx != -1 {
+		rest := webURL[idx+3:]
+		if slashIdx := strings.Index(rest, "/"); slashIdx != -1 {
+			return webURL[:idx+3+slashIdx]
+		}
 	}
 	return ""
 }
 
 // resolveRelativeURLs replaces relative paths in markdown with full GitLab URLs
 // and strips GitLab-specific image attributes.
-func resolveRelativeURLs(text, baseURL string) string {
+// Uses /-/project/{projectID} format for /uploads/ paths so they work directly.
+func resolveRelativeURLs(text, hostURL string, projectID int64) string {
 	// Strip GitLab image attributes like ){width=900 height=492}
 	text = gitlabImageAttrsPattern.ReplaceAllString(text, ")")
 
-	if baseURL == "" {
+	if hostURL == "" {
 		return text
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
+	hostURL = strings.TrimSuffix(hostURL, "/")
+	uploadBase := fmt.Sprintf("%s/-/project/%d", hostURL, projectID)
 	return relativeURLPattern.ReplaceAllStringFunc(text, func(match string) string {
 		sub := relativeURLPattern.FindStringSubmatch(match)
 		if len(sub) < 3 {
 			return match
 		}
-		return sub[1] + baseURL + sub[2] + ")"
+		path := sub[2]
+		if strings.HasPrefix(path, "/uploads/") {
+			return sub[1] + uploadBase + path + ")"
+		}
+		return sub[1] + hostURL + path + ")"
 	})
 }
 
@@ -343,9 +353,9 @@ func resolveRelativeURLs(text, baseURL string) string {
 var markdownWidth int
 
 // renderMarkdown renders markdown text for terminal display using glamour.
-// baseURL is the GitLab project URL used to resolve relative image/link paths.
-func renderMarkdown(text, baseURL string) string {
-	text = resolveRelativeURLs(text, baseURL)
+// hostURL is the GitLab host URL, projectID is the numeric project ID.
+func renderMarkdown(text, hostURL string, projectID int64) string {
+	text = resolveRelativeURLs(text, hostURL, projectID)
 	width := markdownWidth
 	if width <= 0 {
 		width = 80
