@@ -216,6 +216,10 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.pendingCtrlW = true
 			return t, nil
 		}
+		if s == "alt+w" {
+			t.toggleFocus()
+			return t, nil
+		}
 
 		// Global keys for this tab.
 		switch {
