@@ -54,6 +54,12 @@ var (
 				Foreground(SolBase00).
 				Padding(0, 2)
 
+	// InactiveHeaderStyle is used for pane headers when the pane is not focused.
+	InactiveHeaderStyle = lipgloss.NewStyle().
+				Foreground(SolBase00).
+				Background(SolBase2).
+				Padding(0, 2)
+
 	TabBarStyle = lipgloss.NewStyle().
 			BorderBottom(true).
 			BorderStyle(lipgloss.NormalBorder()).

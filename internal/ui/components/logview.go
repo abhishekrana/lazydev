@@ -213,7 +213,11 @@ func (l LogView) View() string {
 	var b strings.Builder
 
 	if l.sourceLabel != "" {
-		header := theme.ActiveTabStyle.Width(l.width).Render(l.sourceLabel)
+		headerStyle := theme.InactiveHeaderStyle
+		if l.focused {
+			headerStyle = theme.ActiveTabStyle
+		}
+		header := headerStyle.Width(l.width).Render(l.sourceLabel)
 		b.WriteString(header)
 		b.WriteString("\n")
 	}

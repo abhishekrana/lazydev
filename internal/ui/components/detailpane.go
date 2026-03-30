@@ -115,7 +115,11 @@ func (d DetailPane) View() string {
 	var b strings.Builder
 
 	if d.title != "" {
-		header := theme.ActiveTabStyle.Width(d.width).Render(d.title)
+		headerStyle := theme.InactiveHeaderStyle
+		if d.focused {
+			headerStyle = theme.ActiveTabStyle
+		}
+		header := headerStyle.Width(d.width).Render(d.title)
 		b.WriteString(header)
 		b.WriteString("\n")
 	}

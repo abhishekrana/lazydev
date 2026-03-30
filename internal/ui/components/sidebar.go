@@ -344,7 +344,11 @@ func (s Sidebar) View() string {
 		b.WriteString("\n")
 	}
 
-	return theme.SidebarStyle.Width(s.width).Height(s.height).Render(b.String())
+	sidebarStyle := theme.SidebarStyle
+	if s.focused {
+		sidebarStyle = sidebarStyle.BorderForeground(theme.SolBlue)
+	}
+	return sidebarStyle.Width(s.width).Height(s.height).Render(b.String())
 }
 
 func truncate(s string, maxLen int) string {
