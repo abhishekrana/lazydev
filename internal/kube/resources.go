@@ -116,6 +116,21 @@ func (c *Client) RestartDeployment(ctx context.Context, namespace, name string) 
 	return nil
 }
 
+// ScaleDeployment scales a deployment to the given replica count.
+func (c *Client) ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error {
+	scale, err := c.clientset.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("getting scale for %s/%s: %w", namespace, name, err)
+	}
+
+	scale.Spec.Replicas = replicas
+	_, err = c.clientset.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("scaling deployment %s/%s to %d: %w", namespace, name, replicas, err)
+	}
+	return nil
+}
+
 // formatAge returns a human-readable duration string (e.g. "2m", "3h", "1d").
 func formatAge(t time.Time) string {
 	if t.IsZero() {

@@ -68,7 +68,7 @@ func (m *Modal) Update(msg tea.Msg) tea.Cmd {
 			m.selected = 1
 		case "tab":
 			m.selected = (m.selected + 1) % 2
-		case "enter":
+		case "enter": //nolint:goconst // idiomatic key name
 			if m.selected == 0 && m.OnOK != nil {
 				cmd := m.OnOK()
 				m.Hide()
@@ -76,7 +76,7 @@ func (m *Modal) Update(msg tea.Msg) tea.Cmd {
 			}
 			m.Hide()
 			return nil
-		case "esc", "n", "q":
+		case "esc", "n", "q": //nolint:goconst // idiomatic key name
 			m.Hide()
 			return nil
 		case "y":

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -138,6 +139,12 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
+	case messages.ExecFinishedMsg:
+		if msg.Err != nil {
+			t.setNotification(fmt.Sprintf("exec failed: %v", msg.Err))
+		}
+		return t, nil
+
 	case clearNotificationMsg:
 		t.notification = ""
 		return t, nil
@@ -199,6 +206,10 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 						func() tea.Cmd { return t.stopContainer(id, name) },
 					)
 					return t, nil
+				}
+			case key.Matches(msg, theme.Keys.Exec):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					return t, t.execShell(item.ID)
 				}
 			case key.Matches(msg, theme.Keys.Delete):
 				if item, ok := t.sidebar.SelectedItem(); ok {
@@ -373,6 +384,13 @@ func (t *DockerTab) waitForLogs(sourceID string) tea.Cmd {
 	return func() tea.Msg {
 		return readLogBatch(sourceID, ch)
 	}
+}
+
+func (t *DockerTab) execShell(containerID string) tea.Cmd {
+	c := exec.CommandContext(context.Background(), "docker", "exec", "-it", containerID, "sh", "-c", "if command -v bash >/dev/null 2>&1; then bash; else sh; fi") //nolint:gosec // intentional exec into user-selected container
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return messages.ExecFinishedMsg{Err: err}
+	})
 }
 
 func readLogBatch(sourceID string, ch <-chan messages.LogLine) tea.Msg {

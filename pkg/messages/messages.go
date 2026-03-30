@@ -120,6 +120,32 @@ type DashboardRow struct {
 	Memory   string
 }
 
+// ExecFinishedMsg is sent when an exec shell session completes.
+type ExecFinishedMsg struct {
+	Err error
+}
+
+// PortForwardStartedMsg is sent when a port-forward starts.
+type PortForwardStartedMsg struct {
+	Namespace  string
+	Pod        string
+	LocalPort  string
+	RemotePort string
+}
+
+// PortForwardStoppedMsg is sent when a port-forward stops.
+type PortForwardStoppedMsg struct {
+	Pod string
+	Err error
+}
+
+// ScaleMsg reports the result of a scale operation.
+type ScaleMsg struct {
+	Name     string
+	Replicas int
+	Err      error
+}
+
 // DiscoveryResultMsg reports which backends are available.
 type DiscoveryResultMsg struct {
 	DockerAvailable bool

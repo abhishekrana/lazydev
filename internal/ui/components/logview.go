@@ -177,13 +177,13 @@ func (l *LogView) updateSearch(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "esc":
+		case "esc": //nolint:goconst // idiomatic key name
 			l.searching = false
 			l.searchQuery = ""
 			l.searchInput.SetValue("")
 			l.searchInput.Blur()
 			return nil
-		case "enter":
+		case "enter": //nolint:goconst // idiomatic key name
 			l.searchQuery = l.searchInput.Value()
 			l.searching = false
 			l.searchInput.Blur()

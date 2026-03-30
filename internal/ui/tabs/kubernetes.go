@@ -3,6 +3,8 @@ package tabs
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"strconv"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -32,6 +34,7 @@ type KubeTab struct {
 	logView      components.LogView
 	detailPane   components.DetailPane
 	modal        components.Modal
+	inputModal   components.InputModal
 	focusSidebar bool
 	rightPane    kubeRightPane
 	width        int
@@ -52,6 +55,7 @@ func NewKubeTab(client *kube.Client, streamMgr *logpkg.StreamManager) *KubeTab {
 		client:       client,
 		streamMgr:    streamMgr,
 		sidebar:      sidebar,
+		inputModal:   components.NewInputModal(),
 		logView:      components.NewLogView(),
 		detailPane:   components.NewDetailPane(),
 		modal:        components.NewModal(),
@@ -75,6 +79,7 @@ func (t *KubeTab) SetSize(width, height int) {
 	t.logView.SetSize(rightWidth, height)
 	t.detailPane.SetSize(rightWidth, height)
 	t.modal.SetSize(width, height)
+	t.inputModal.SetSize(width, height)
 }
 
 func (t *KubeTab) Init() tea.Cmd {
@@ -85,6 +90,12 @@ func (t *KubeTab) Init() tea.Cmd {
 }
 
 func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
+	// Input modal takes priority.
+	if t.inputModal.Visible() {
+		cmd := t.inputModal.Update(msg)
+		return t, cmd
+	}
+
 	// Modal takes priority.
 	if t.modal.Visible() {
 		cmd := t.modal.Update(msg)
@@ -137,6 +148,20 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.setNotification(fmt.Sprintf("describe failed: %v", msg.Err))
 		}
 		return t, nil
+
+	case messages.ExecFinishedMsg:
+		if msg.Err != nil {
+			t.setNotification(fmt.Sprintf("exec failed: %v", msg.Err))
+		}
+		return t, nil
+
+	case messages.ScaleMsg:
+		if msg.Err == nil {
+			t.setNotification(fmt.Sprintf("scaled %s to %d replicas", msg.Name, msg.Replicas))
+		} else {
+			t.setNotification(fmt.Sprintf("scale failed: %v", msg.Err))
+		}
+		return t, t.fetchPods()
 
 	case kubeRefreshTickMsg:
 		return t, tea.Batch(t.fetchPods(), t.tickRefresh())
@@ -192,11 +217,38 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 					return t, nil
 				}
 			case key.Matches(msg, theme.Keys.Restart):
-				// For pods, "restart" means delete (K8s will recreate if managed by a controller).
 				if item, ok := t.sidebar.SelectedItem(); ok {
 					ns, name := item.Group, item.ID
 					t.setNotification(fmt.Sprintf("deleting pod %s (will be recreated)...", name))
 					return t, t.deletePod(ns, name)
+				}
+			case key.Matches(msg, theme.Keys.Exec):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					return t, t.execShell(item.Group, item.ID)
+				}
+			case key.Matches(msg, theme.Keys.PortFwd):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					ns, name := item.Group, item.ID
+					t.inputModal.Show(
+						fmt.Sprintf("Port-forward %s", name),
+						"local:remote (e.g. 8080:80)",
+						func(value string) tea.Cmd {
+							return t.portForward(ns, name, value)
+						},
+					)
+					return t, nil
+				}
+			case key.Matches(msg, theme.Keys.Scale):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					ns, name := item.Group, item.ID
+					t.inputModal.Show(
+						fmt.Sprintf("Scale deployment %s", name),
+						"replicas (e.g. 3)",
+						func(value string) tea.Cmd {
+							return t.scaleDeployment(ns, name, value)
+						},
+					)
+					return t, nil
 				}
 			}
 
@@ -250,6 +302,10 @@ func (t *KubeTab) View() string {
 		t.width,
 		t.height,
 	)
+
+	if t.inputModal.Visible() {
+		return t.inputModal.View()
+	}
 
 	if t.modal.Visible() {
 		return t.modal.View()
@@ -352,6 +408,37 @@ func (t *KubeTab) waitForLogs(sourceID string) tea.Cmd {
 	}
 	return func() tea.Msg {
 		return readLogBatch(sourceID, ch)
+	}
+}
+
+func (t *KubeTab) execShell(namespace, podName string) tea.Cmd {
+	c := exec.CommandContext(context.Background(), "kubectl", "exec", "-it", "-n", namespace, podName, "--", "sh", "-c", "if command -v bash >/dev/null 2>&1; then bash; else sh; fi") //nolint:gosec // intentional exec into user-selected pod
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return messages.ExecFinishedMsg{Err: err}
+	})
+}
+
+func (t *KubeTab) portForward(namespace, podName, ports string) tea.Cmd {
+	// Run kubectl port-forward in the background via exec.
+	c := exec.CommandContext(context.Background(), "kubectl", "port-forward", "-n", namespace, podName, ports) //nolint:gosec // intentional port-forward to user-selected pod
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return messages.ExecFinishedMsg{Err: err}
+	})
+}
+
+func (t *KubeTab) scaleDeployment(namespace, name, replicaStr string) tea.Cmd {
+	replicas, err := strconv.Atoi(replicaStr)
+	if err != nil || replicas < 0 || replicas > 1000 {
+		return func() tea.Msg {
+			return messages.ScaleMsg{Name: name, Err: fmt.Errorf("invalid replica count: %s", replicaStr)}
+		}
+	}
+	r := int32(replicas) //nolint:gosec // validated above
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := t.client.ScaleDeployment(ctx, namespace, name, r)
+		return messages.ScaleMsg{Name: name, Replicas: replicas, Err: err}
 	}
 }
 
