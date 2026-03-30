@@ -456,15 +456,6 @@ func issueInIteration(issue messages.GitLabIssue, iterationID int64) bool {
 	return issue.IterationID == iterationID && iterationID != 0
 }
 
-func issueInList(issue messages.GitLabIssue, list []messages.GitLabIssue) bool {
-	for _, i := range list {
-		if i.IID == issue.IID {
-			return true
-		}
-	}
-	return false
-}
-
 // openBrowser opens a URL in the default browser.
 func openBrowser(url string) error {
 	return exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open

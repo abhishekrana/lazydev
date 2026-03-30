@@ -224,7 +224,7 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.pendingCtrlW = true
 			return t, nil
 		}
-		if s == "alt+w" {
+		if s == "alt+w" { //nolint:goconst // key names
 			t.toggleFocus()
 			return t, nil
 		}
