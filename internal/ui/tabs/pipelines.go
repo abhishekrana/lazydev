@@ -233,6 +233,7 @@ func (t *PipelinesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd)
 			t.focusSidebar = false
 			t.sidebar.SetFocused(false)
 			t.detailPane.SetFocused(true)
+			t.detailPane.SetContent("Loading...", "Fetching pipeline jobs...")
 			return t, t.selectPipeline(item.ID)
 		}
 	case msg.String() == "o":
@@ -248,7 +249,12 @@ func (t *PipelinesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd)
 			return t, t.cancelPipeline(p.ID)
 		}
 	default:
+		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
+		if newItem, ok := t.sidebar.SelectedItem(); ok && newItem.ID != prevItem.ID {
+			t.detailPane.SetContent("Loading...", "Fetching pipeline jobs...")
+			return t, tea.Batch(cmd, t.selectPipeline(newItem.ID))
+		}
 		return t, cmd
 	}
 	return t, nil

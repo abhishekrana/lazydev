@@ -190,15 +190,14 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 			t.focusSidebar = false
 			t.sidebar.SetFocused(false)
 			t.detailPane.SetFocused(true)
+			t.detailPane.SetContent("Loading...", "Fetching issue details...")
 			return t, t.selectIssue(item.ID)
 		}
 	case msg.String() == "o":
-		// Open in browser.
 		if issue := t.findSelectedIssue(); issue != nil && issue.WebURL != "" {
 			_ = openBrowser(issue.WebURL)
 		}
 	case msg.String() == "s":
-		// Close/reopen toggle.
 		if issue := t.findSelectedIssue(); issue != nil {
 			if issue.State == "opened" {
 				return t, t.closeIssue(issue.IID)
@@ -206,17 +205,21 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 			return t, t.reopenIssue(issue.IID)
 		}
 	case msg.String() == "c":
-		// Comment — open $EDITOR.
 		if issue := t.findSelectedIssue(); issue != nil {
 			return t, t.commentOnIssue(issue.IID)
 		}
 	case msg.String() == "a":
-		// Assign to self.
 		if issue := t.findSelectedIssue(); issue != nil {
 			return t, t.assignToSelf(issue.IID)
 		}
 	default:
+		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
+		// Auto-fetch details when cursor moves to a different item.
+		if newItem, ok := t.sidebar.SelectedItem(); ok && newItem.ID != prevItem.ID {
+			t.detailPane.SetContent("Loading...", "Fetching issue details...")
+			return t, tea.Batch(cmd, t.selectIssue(newItem.ID))
+		}
 		return t, cmd
 	}
 	return t, nil

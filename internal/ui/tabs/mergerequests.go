@@ -182,6 +182,7 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 			t.focusSidebar = false
 			t.sidebar.SetFocused(false)
 			t.detailPane.SetFocused(true)
+			t.detailPane.SetContent("Loading...", "Fetching MR details...")
 			return t, t.selectMR(item.ID)
 		}
 	case msg.String() == "o":
@@ -221,7 +222,12 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 			return t, t.commentOnMR(mr.IID)
 		}
 	default:
+		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
+		if newItem, ok := t.sidebar.SelectedItem(); ok && newItem.ID != prevItem.ID {
+			t.detailPane.SetContent("Loading...", "Fetching MR details...")
+			return t, tea.Batch(cmd, t.selectMR(newItem.ID))
+		}
 		return t, cmd
 	}
 	return t, nil
