@@ -332,7 +332,7 @@ func (l LogView) View() string {
 		end = len(filtered)
 	}
 
-	cursorStyle := theme.SidebarSelectedStyle
+	cursorStyle := theme.LogCursorStyle
 
 	lineCount := 0
 	for i := start; i < end && lineCount < viewable; i++ {

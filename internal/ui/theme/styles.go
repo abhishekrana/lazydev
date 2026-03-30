@@ -80,6 +80,11 @@ var (
 				Bold(true).
 				PaddingLeft(2)
 
+	// LogCursorStyle highlights the cursor line in the log pane (no padding).
+	LogCursorStyle = lipgloss.NewStyle().
+			Foreground(SolBase3).
+			Background(SolBlue)
+
 	SidebarGroupStyle = lipgloss.NewStyle().
 				Foreground(SolViolet).
 				Bold(true).
