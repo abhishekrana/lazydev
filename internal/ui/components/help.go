@@ -75,6 +75,7 @@ func (h HelpOverlay) View() string {
 			title: "Global",
 			keys: [][2]string{
 				{"q / Ctrl+C", "Quit"},
+				{"1-9", "Switch to tab by number"},
 				{"Tab", "Next tab"},
 				{"Shift+Tab", "Previous tab"},
 				{"?", "Toggle help"},
@@ -87,6 +88,7 @@ func (h HelpOverlay) View() string {
 				{"j / ↓", "Move down"},
 				{"k / ↑", "Move up"},
 				{"Ctrl+W W", "Switch pane focus"},
+				{"Alt+W", "Switch pane focus"},
 				{"Enter", "Select / collapse group"},
 				{"Esc", "Back / cancel"},
 				{"gg", "Scroll to top"},
@@ -103,26 +105,47 @@ func (h HelpOverlay) View() string {
 				{"Y", "Yank all filtered lines to clipboard"},
 				{"e", "Export filtered logs to text file"},
 				{"E", "Export filtered logs to JSON file"},
-				{"o", "Open logs in $EDITOR (vim)"},
+				{"o", "Open logs in $EDITOR"},
 			},
 		},
 		{
-			title: "Actions",
+			title: "Docker/K8s",
 			keys: [][2]string{
 				{"r", "Restart container/pod"},
 				{"s", "Stop container"},
 				{"d", "Delete container/pod"},
 				{"D", "Describe / inspect (toggle)"},
-				{"y", "View YAML (K8s)"},
 				{"x", "Exec shell"},
 				{"p", "Port forward (K8s)"},
 				{"S", "Scale deployment (K8s)"},
 			},
 		},
 		{
-			title: "Dashboard",
+			title: "GitLab Issues",
 			keys: [][2]string{
-				{"1-6", "Sort by column"},
+				{"s", "Close / reopen issue"},
+				{"c", "Comment (opens $EDITOR)"},
+				{"a", "Assign to self"},
+				{"o", "Open in browser"},
+			},
+		},
+		{
+			title: "GitLab MRs",
+			keys: [][2]string{
+				{"r", "Review in neovim (DiffviewOpen)"},
+				{"m", "Merge (with confirmation)"},
+				{"A", "Approve"},
+				{"s", "Close / reopen"},
+				{"c", "Comment (opens $EDITOR)"},
+				{"o", "Open in browser"},
+			},
+		},
+		{
+			title: "GitLab Pipelines",
+			keys: [][2]string{
+				{"R", "Retry failed pipeline"},
+				{"C", "Cancel running pipeline"},
+				{"o", "Open in browser"},
 			},
 		},
 	}
