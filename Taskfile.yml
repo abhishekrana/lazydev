@@ -24,6 +24,11 @@ tasks:
     cmds:
       - ./{{.BINARY}}
 
+  install:
+    desc: Install binary to ~/.local/bin
+    cmds:
+      - GOBIN=~/.local/bin go install {{.GOFLAGS}} ./cmd/lazydev/
+
   clean:
     desc: Remove binary
     cmds:
