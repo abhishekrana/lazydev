@@ -48,6 +48,11 @@ func main() {
 		)
 	}
 
+	// Print warnings for backends that failed to connect.
+	for _, w := range state.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+
 	if len(tabModels) <= 1 {
 		fmt.Fprintln(os.Stderr, "Error: No backends available. Ensure Docker is running, kubeconfig exists, or GitLab is configured.")
 		os.Exit(1)

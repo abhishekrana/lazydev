@@ -112,6 +112,13 @@ func readGlabConfig() (string, string) {
 		return "", ""
 	}
 
+	// glab uses "!!null" YAML tag for tokens which Go's YAML parser
+	// treats as empty. Fall back to regex extraction from raw file.
+	token := hostCfg.Token
+	if token == "" {
+		token = extractTokenFromRaw(data, host)
+	}
+
 	protocol := hostCfg.APIProtocol
 	if protocol == "" {
 		protocol = "https"
@@ -122,7 +129,39 @@ func readGlabConfig() (string, string) {
 	}
 
 	url := fmt.Sprintf("%s://%s", protocol, apiHost)
-	return url, hostCfg.Token
+	return url, token
+}
+
+// extractTokenFromRaw extracts the token from glab config when YAML parsing
+// fails due to !!null tag. Looks for "token: !!null <actual-token>" pattern.
+func extractTokenFromRaw(data []byte, host string) string {
+	lines := strings.Split(string(data), "\n")
+	inHost := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Check if we're in the right host section.
+		if strings.HasPrefix(trimmed, host+":") {
+			inHost = true
+			continue
+		}
+		// Another top-level host starts.
+		if inHost && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && trimmed != "" {
+			inHost = false
+		}
+		if inHost && strings.Contains(trimmed, "token:") {
+			// Handle "token: !!null glpat-xxx" or "token: glpat-xxx"
+			parts := strings.SplitN(trimmed, "token:", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				val = strings.TrimPrefix(val, "!!null")
+				val = strings.TrimSpace(val)
+				if val != "" {
+					return val
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // detectProjectFromGitRemote extracts the GitLab project path from the current

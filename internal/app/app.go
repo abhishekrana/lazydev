@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/abhishek-rana/lazydev/internal/config"
 	"github.com/abhishek-rana/lazydev/internal/docker"
@@ -17,6 +18,7 @@ type SharedState struct {
 	GitLabClient *gitlabpkg.Client
 	StreamMgr    *logpkg.StreamManager
 	Config       *config.Config
+	Warnings     []string
 	cancel       context.CancelFunc
 }
 
@@ -46,6 +48,8 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 	gc, err := gitlabpkg.NewClient(cfg.GitLab.URL, cfg.GitLab.Token, cfg.GitLab.Project)
 	if err == nil {
 		state.GitLabClient = gc
+	} else {
+		state.Warnings = append(state.Warnings, fmt.Sprintf("GitLab: %v", err))
 	}
 
 	return state, nil
