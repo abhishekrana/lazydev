@@ -70,6 +70,32 @@ func (d DetailPane) viewableHeight() int {
 
 // Update handles scrolling input.
 func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		viewable := d.viewableHeight()
+		maxOffset := len(d.lines) - viewable
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		switch mouse.Button {
+		case tea.MouseWheelUp:
+			d.offset -= 3
+			if d.offset < 0 {
+				d.offset = 0
+			}
+		case tea.MouseWheelDown:
+			d.offset += 3
+			if d.offset > maxOffset {
+				d.offset = maxOffset
+			}
+		}
+		return nil
+
+	case tea.MouseClickMsg:
+		return nil
+	}
+
 	if !d.focused {
 		return nil
 	}
@@ -136,27 +162,59 @@ func (d DetailPane) View() string {
 		return b.String()
 	}
 
+	contentWidth := d.width - 1 // reserve 1 col for scrollbar
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
 	end := d.offset + viewable
 	if end > len(d.lines) {
 		end = len(d.lines)
 	}
 
+	thumbStart, thumbEnd := d.scrollbarThumb(len(d.lines), viewable, d.offset)
+
 	lineCount := 0
 	for i := d.offset; i < end; i++ {
 		line := d.lines[i]
-		if len(line) > d.width && d.width > 0 {
-			line = line[:d.width]
+		if len(line) > contentWidth && contentWidth > 0 {
+			line = line[:contentWidth]
 		}
 		b.WriteString(line)
+		// Pad to contentWidth for scrollbar alignment.
+		if pad := contentWidth - len(line); pad > 0 {
+			b.WriteString(strings.Repeat(" ", pad))
+		}
+		b.WriteString(d.scrollbarChar(lineCount, thumbStart, thumbEnd))
 		b.WriteString("\n")
 		lineCount++
 	}
 
 	for lineCount < viewable {
-		b.WriteString(strings.Repeat(" ", d.width))
+		b.WriteString(strings.Repeat(" ", contentWidth))
+		b.WriteString(d.scrollbarChar(lineCount, thumbStart, thumbEnd))
 		b.WriteString("\n")
 		lineCount++
 	}
 
 	return b.String()
+}
+
+func (d DetailPane) scrollbarThumb(totalLines, viewable, offset int) (int, int) {
+	if totalLines <= viewable || viewable <= 0 {
+		return -1, -1
+	}
+	thumbSize := max(1, viewable*viewable/totalLines)
+	thumbPos := offset * (viewable - thumbSize) / max(1, totalLines-viewable)
+	return thumbPos, thumbPos + thumbSize
+}
+
+func (d DetailPane) scrollbarChar(row, thumbStart, thumbEnd int) string {
+	if thumbStart < 0 {
+		return " "
+	}
+	if row >= thumbStart && row < thumbEnd {
+		return theme.ScrollbarThumbStyle.Render("┃")
+	}
+	return " "
 }

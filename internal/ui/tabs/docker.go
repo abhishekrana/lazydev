@@ -200,8 +200,12 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		if sidebarWidth < 20 {
 			sidebarWidth = 20
 		}
-		if mouse.X >= sidebarWidth && t.rightPane == paneLogs {
-			cmd := t.logView.Update(msg)
+		if mouse.X >= sidebarWidth {
+			if t.rightPane == paneLogs {
+				cmd := t.logView.Update(msg)
+				return t, cmd
+			}
+			cmd := t.detailPane.Update(msg)
 			return t, cmd
 		}
 		return t, nil

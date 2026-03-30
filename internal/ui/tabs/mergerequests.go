@@ -156,6 +156,19 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		t.focusSidebar = false
 		t.sidebar.SetFocused(false)
 		t.detailPane.SetFocused(true)
+		cmd := t.detailPane.Update(msg)
+		return t, cmd
+
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		sidebarWidth := t.width * 25 / 100
+		if sidebarWidth < 30 {
+			sidebarWidth = 30
+		}
+		if mouse.X >= sidebarWidth {
+			cmd := t.detailPane.Update(msg)
+			return t, cmd
+		}
 		return t, nil
 
 	case tea.KeyPressMsg:

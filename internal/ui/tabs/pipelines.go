@@ -183,7 +183,8 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, cmd
 		}
 		t.detailPane.SetFocused(true)
-		return t, nil
+		cmd := t.detailPane.Update(msg)
+		return t, cmd
 
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
@@ -191,8 +192,12 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		if sidebarWidth < 30 {
 			sidebarWidth = 30
 		}
-		if mouse.X >= sidebarWidth && t.rightPane == pipelineRightJobLog {
-			cmd := t.logView.Update(msg)
+		if mouse.X >= sidebarWidth {
+			if t.rightPane == pipelineRightJobLog {
+				cmd := t.logView.Update(msg)
+				return t, cmd
+			}
+			cmd := t.detailPane.Update(msg)
 			return t, cmd
 		}
 		return t, nil

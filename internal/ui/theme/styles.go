@@ -125,6 +125,8 @@ var (
 	SearchStyle = lipgloss.NewStyle().
 			Foreground(SolOrange).
 			Bold(true)
+
+	ScrollbarThumbStyle = lipgloss.NewStyle().Foreground(SolBase01)
 )
 
 // StateIcon returns a colored status icon for a ContainerState enum.
