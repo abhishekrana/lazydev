@@ -91,6 +91,35 @@ type ContainerInspectMsg struct {
 	Err  error
 }
 
+// ResourceStats holds CPU/memory stats for a container or pod.
+type ResourceStats struct {
+	ID     string
+	Name   string
+	Source string // "docker" or "kubernetes"
+	CPU    string // e.g. "12.5%" or "100m"
+	Memory string // e.g. "45.2 MiB" or "128Mi"
+}
+
+// ResourceStatsMsg delivers stats for multiple resources.
+type ResourceStatsMsg struct {
+	Stats  []ResourceStats
+	Source string
+	Err    error
+}
+
+// DashboardRow represents a single row in the dashboard table.
+type DashboardRow struct {
+	Name     string
+	Type     string // "container" or "pod"
+	Source   string // "docker" or "kubernetes"
+	Group    string // compose project or namespace
+	Status   string
+	State    ContainerState
+	Restarts int
+	CPU      string
+	Memory   string
+}
+
 // DiscoveryResultMsg reports which backends are available.
 type DiscoveryResultMsg struct {
 	DockerAvailable bool

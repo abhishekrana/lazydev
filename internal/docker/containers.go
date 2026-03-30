@@ -83,6 +83,61 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (string, error
 	return string(data), nil
 }
 
+// ContainerStats returns CPU and memory usage for all running containers.
+func (c *Client) ContainerStats(ctx context.Context) ([]messages.ResourceStats, error) {
+	running, err := c.Raw.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list running containers: %w", err)
+	}
+
+	stats := make([]messages.ResourceStats, 0, len(running))
+	for _, r := range running {
+		name := ""
+		if len(r.Names) > 0 {
+			name = r.Names[0]
+			if len(name) > 0 && name[0] == '/' {
+				name = name[1:]
+			}
+		}
+
+		resp, err := c.Raw.ContainerStatsOneShot(ctx, r.ID)
+		if err != nil {
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		var sr container.StatsResponse
+		if err := json.Unmarshal(body, &sr); err != nil {
+			continue
+		}
+
+		cpuDelta := float64(sr.CPUStats.CPUUsage.TotalUsage - sr.PreCPUStats.CPUUsage.TotalUsage)
+		systemDelta := float64(sr.CPUStats.SystemUsage - sr.PreCPUStats.SystemUsage)
+		numCPUs := sr.CPUStats.OnlineCPUs
+		cpuPercent := 0.0
+		if systemDelta > 0 && numCPUs > 0 {
+			cpuPercent = (cpuDelta / systemDelta) * float64(numCPUs) * 100.0
+		}
+
+		memMiB := float64(sr.MemoryStats.Usage) / (1024 * 1024)
+
+		stats = append(stats, messages.ResourceStats{
+			ID:     r.ID,
+			Name:   name,
+			Source: "docker",
+			CPU:    fmt.Sprintf("%.1f%%", cpuPercent),
+			Memory: fmt.Sprintf("%.1f MiB", memMiB),
+		})
+	}
+
+	return stats, nil
+}
+
 // mapContainerState converts a Docker state string to a ContainerState.
 func mapContainerState(state string) messages.ContainerState {
 	switch state {

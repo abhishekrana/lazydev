@@ -32,8 +32,11 @@ func main() {
 		tabModels = append(tabModels, tabs.NewKubeTab(state.KubeClient, state.StreamMgr))
 	}
 
-	// All Logs tab (always present if any backend is available).
+	// All Logs tab.
 	tabModels = append(tabModels, tabs.NewLogsTab())
+
+	// Dashboard tab.
+	tabModels = append(tabModels, tabs.NewDashboardTab(state.DockerClient, state.KubeClient))
 
 	if len(tabModels) <= 1 {
 		fmt.Fprintln(os.Stderr, "Error: No backends available. Ensure Docker is running or kubeconfig exists.")
