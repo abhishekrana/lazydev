@@ -18,20 +18,20 @@ import (
 
 // MRsTab displays GitLab merge requests.
 type MRsTab struct {
-	client       *gitlabpkg.Client
-	sidebar      components.Sidebar
-	detailPane   components.DetailPane
-	modal        components.Modal
-	focusSidebar bool
-	width        int
-	height       int
-	selectedIID  int64
-	mrs          []messages.GitLabMR
-	notification string
-	pendingCtrlW bool
-	refreshS       int
-	fetchSeq       uint64
-	pendingFetch   string
+	client          *gitlabpkg.Client
+	sidebar         components.Sidebar
+	detailPane      components.DetailPane
+	modal           components.Modal
+	focusSidebar    bool
+	width           int
+	height          int
+	selectedIID     int64
+	mrs             []messages.GitLabMR
+	notification    string
+	pendingCtrlW    bool
+	refreshS        int
+	fetchSeq        uint64
+	pendingFetch    string
 	needsAutoSelect bool
 }
 

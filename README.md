@@ -16,9 +16,11 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 - **Grouped resources** — Docker containers grouped by Compose project, K8s pods by namespace
 - **Collapsible groups** — `Enter` to expand/collapse resource groups in sidebar
 - **Auto-detect backends** — automatically finds Docker daemon, kubeconfig, and GitLab token (from glab CLI)
-- **GitLab Issues** — view assigned/created issues, close/reopen, comment, assign
-- **GitLab MRs** — track MRs, approve, merge, review with neovim DiffviewOpen
+- **GitLab Issues** — view assigned/created issues, sprint/iteration grouping, related MRs, close/reopen, comment, assign
+- **GitLab MRs** — track MRs, approve, merge, review with neovim DiffviewOpen, markdown descriptions
 - **GitLab Pipelines** — view pipeline jobs, job logs, retry/cancel pipelines
+- **Markdown rendering** — issue/MR descriptions and comments rendered with solarized theme via glamour
+- **Ctrl+click URLs** — open links in browser directly from detail panes
 - **Multi-user tracking** — track your own + bot account activity across issues/MRs/pipelines
 - **Container actions** — restart, stop, remove, inspect, exec, port-forward, scale
 - **Vim + arrow key navigation** — hjkl and arrow keys, `Ctrl+W W` / `Alt+W` for pane switching
@@ -70,7 +72,7 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 | Key            | Action                  |
 | -------------- | ----------------------- |
 | `q` / `Ctrl+C` | Quit                    |
-| `1`-`4`        | Switch to tab by number |
+| `1`-`7`        | Switch to tab by number |
 | `Tab`          | Next tab                |
 | `Shift+Tab`    | Previous tab            |
 | `?`            | Help                    |
@@ -119,6 +121,8 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 | `s` | Close/reopen issue        |
 | `c` | Comment (opens `$EDITOR`) |
 | `a` | Assign to self            |
+| `l` | Set labels                |
+| `n` | Create new issue          |
 | `o` | Open in browser           |
 
 ### GitLab MRs
@@ -134,11 +138,23 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 
 ### GitLab Pipelines
 
-| Key | Action                  |
-| --- | ----------------------- |
-| `R` | Retry failed pipeline   |
-| `C` | Cancel running pipeline |
-| `o` | Open in browser         |
+| Key     | Action                  |
+| ------- | ----------------------- |
+| `Enter` | View jobs / job log     |
+| `Esc`   | Back to job list        |
+| `R`     | Retry failed pipeline   |
+| `C`     | Cancel running pipeline |
+| `o`     | Open in browser         |
+
+### Detail Pane
+
+| Key          | Action              |
+| ------------ | ------------------- |
+| `j` / `Down` | Scroll down         |
+| `k` / `Up`   | Scroll up           |
+| `gg`         | Scroll to top       |
+| `G`          | Scroll to bottom    |
+| `Ctrl+click` | Open URL in browser |
 
 ## UI Layout
 
@@ -197,6 +213,7 @@ ui:
 - **[Docker SDK](https://pkg.go.dev/github.com/docker/docker/client)** for Docker interaction
 - **[client-go](https://github.com/kubernetes/client-go)** for Kubernetes interaction
 - **[GitLab Go SDK](https://gitlab.com/gitlab-org/api/client-go)** for GitLab API
+- **[Glamour v2](https://github.com/charmbracelet/glamour)** for terminal markdown rendering
 
 ## Architecture
 
@@ -208,7 +225,7 @@ internal/
     root.go                   Root Bubble Tea model, tab dispatch
     theme/                    Lip Gloss styles, keybindings
     components/               Reusable widgets (sidebar, logview, tabbar, statusbar)
-    tabs/                     Tab models (docker, kubernetes, logs, dashboard)
+    tabs/                     Tab models (docker, kubernetes, logs, dashboard, issues, mrs, pipelines)
     layout/                   Split pane primitives
   docker/                     Docker client, containers, compose, actions
   kube/                       K8s client, pods, deployments, services, events

@@ -23,21 +23,21 @@ const (
 
 // PipelinesTab displays GitLab CI pipelines.
 type PipelinesTab struct {
-	client         *gitlabpkg.Client
-	sidebar        components.Sidebar
-	detailPane     components.DetailPane
-	logView        components.LogView
-	modal          components.Modal
-	rightPane      pipelineRightPane
-	focusSidebar   bool
-	width          int
-	height         int
-	selectedID     int64
-	pipelines      []messages.GitLabPipeline
-	jobs           []messages.GitLabJob
-	selectedJobIdx int
-	notification   string
-	pendingCtrlW   bool
+	client          *gitlabpkg.Client
+	sidebar         components.Sidebar
+	detailPane      components.DetailPane
+	logView         components.LogView
+	modal           components.Modal
+	rightPane       pipelineRightPane
+	focusSidebar    bool
+	width           int
+	height          int
+	selectedID      int64
+	pipelines       []messages.GitLabPipeline
+	jobs            []messages.GitLabJob
+	selectedJobIdx  int
+	notification    string
+	pendingCtrlW    bool
 	refreshS        int
 	fetchSeq        uint64
 	pendingFetch    string

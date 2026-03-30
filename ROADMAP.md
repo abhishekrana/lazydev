@@ -72,6 +72,19 @@
 8. Homebrew formula
 9. **Milestone**: v1.0 release
 
+## Phase 8: GitLab Integration [DONE]
+
+1. GitLab client with auth discovery (config → env → glab CLI config)
+2. Project auto-detection from git remote origin URL
+3. Multi-user tracking (authenticated user + additional configured users)
+4. Issues tab — assigned/created, sprint/iteration grouping, backlog, related MRs
+5. MRs tab — mine/review-requested/all open, approve, merge, neovim DiffviewOpen review
+6. Pipelines tab — pipeline list, job list, live job log streaming (poll every 3s)
+7. Markdown rendering with solarized theme (glamour v2), relative URL resolution
+8. Ctrl+click to open URLs in browser from detail panes
+9. Tab activation with auto-select first item on switch
+10. **Milestone**: Full GitLab workflow — issues → MRs → pipelines → review → merge
+
 ## Verification Plan
 
 | Test              | How                                                                                                   |
@@ -83,3 +96,8 @@
 | Stress test       | Tail high-volume log producer -> TUI stays responsive (batching works)                                |
 | No backends       | Neither Docker nor K8s available -> clear error message and exit                                      |
 | Single backend    | Only Docker OR only K8s -> hide unavailable tab, show notice                                          |
+| GitLab issues     | Open Issues tab -> issues grouped by sprint + backlog -> select -> description rendered as markdown   |
+| GitLab MRs        | Open MRs tab -> approve/merge actions -> neovim DiffviewOpen review                                   |
+| GitLab pipelines  | Open Pipelines tab -> select pipeline -> view jobs -> select job -> live job log streaming            |
+| Tab auto-select   | Switch between tabs -> first item auto-selected with details loaded on each tab                       |
+| Ctrl+click URLs   | Ctrl+click a URL in detail pane -> opens in browser                                                   |

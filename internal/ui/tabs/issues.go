@@ -18,18 +18,18 @@ import (
 
 // IssuesTab displays GitLab issues.
 type IssuesTab struct {
-	client       *gitlabpkg.Client
-	sidebar      components.Sidebar
-	detailPane   components.DetailPane
-	modal        components.Modal
-	inputModal   components.InputModal
-	focusSidebar bool
-	width        int
-	height       int
-	selectedIID  int64
-	issues       []messages.GitLabIssue // flat list for lookup
-	notification string
-	pendingCtrlW bool
+	client          *gitlabpkg.Client
+	sidebar         components.Sidebar
+	detailPane      components.DetailPane
+	modal           components.Modal
+	inputModal      components.InputModal
+	focusSidebar    bool
+	width           int
+	height          int
+	selectedIID     int64
+	issues          []messages.GitLabIssue // flat list for lookup
+	notification    string
+	pendingCtrlW    bool
 	refreshS        int
 	fetchSeq        uint64 // incremented on each detail fetch, used to discard stale responses
 	pendingFetch    string // sidebar item ID waiting for debounce
