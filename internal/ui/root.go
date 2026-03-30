@@ -108,6 +108,19 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusBar.Context = ctx
 	}
 
+	// Broadcast LogBatchMsg to all tabs (so All Logs tab receives everything).
+	if _, ok := msg.(messages.LogBatchMsg); ok {
+		var cmds []tea.Cmd
+		for i := range m.tabs {
+			var cmd tea.Cmd
+			m.tabs[i], cmd = m.tabs[i].Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+	}
+
 	// Delegate to active tab.
 	if m.activeTab >= 0 && m.activeTab < len(m.tabs) {
 		var cmd tea.Cmd

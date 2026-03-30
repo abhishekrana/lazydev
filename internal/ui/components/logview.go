@@ -12,7 +12,7 @@ import (
 	"github.com/abhishek-rana/lazydk/pkg/messages"
 )
 
-// LogView displays log lines with tail, search, and highlighting.
+// LogView displays log lines with tail, search, level filtering, and highlighting.
 type LogView struct {
 	lines       []messages.LogLine
 	offset      int
@@ -24,6 +24,7 @@ type LogView struct {
 	searchInput textinput.Model
 	searchQuery string
 	sourceLabel string
+	levelFilter messages.LogLevel // LogLevelUnknown = show all
 }
 
 // NewLogView creates a new log viewport.
@@ -80,9 +81,10 @@ func (l *LogView) Clear() {
 }
 
 func (l *LogView) scrollToBottom() {
+	filtered := l.visibleLines()
 	viewable := l.viewableHeight()
-	if len(l.lines) > viewable {
-		l.offset = len(l.lines) - viewable
+	if len(filtered) > viewable {
+		l.offset = len(filtered) - viewable
 	} else {
 		l.offset = 0
 	}
@@ -96,6 +98,8 @@ func (l LogView) viewableHeight() int {
 	if l.searching {
 		h--
 	}
+	// Status line (filter/search info).
+	h--
 	if h < 1 {
 		h = 1
 	}
@@ -121,7 +125,8 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 				l.offset--
 			}
 		case key.Matches(msg, theme.Keys.Down):
-			maxOffset := len(l.lines) - l.viewableHeight()
+			filtered := l.visibleLines()
+			maxOffset := len(filtered) - l.viewableHeight()
 			if maxOffset < 0 {
 				maxOffset = 0
 			}
@@ -135,6 +140,11 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 			l.searching = true
 			l.searchInput.Focus()
 			return nil
+		case key.Matches(msg, theme.Keys.Filter):
+			l.cycleFilter()
+			if l.autoScroll {
+				l.scrollToBottom()
+			}
 		case msg.String() == "G":
 			l.autoScroll = true
 			l.scrollToBottom()
@@ -145,6 +155,22 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 	}
 
 	return nil
+}
+
+func (l *LogView) cycleFilter() {
+	switch l.levelFilter {
+	case messages.LogLevelUnknown:
+		l.levelFilter = messages.LogLevelError
+	case messages.LogLevelError:
+		l.levelFilter = messages.LogLevelWarn
+	case messages.LogLevelWarn:
+		l.levelFilter = messages.LogLevelInfo
+	case messages.LogLevelInfo:
+		l.levelFilter = messages.LogLevelDebug
+	default:
+		l.levelFilter = messages.LogLevelUnknown
+	}
+	l.offset = 0
 }
 
 func (l *LogView) updateSearch(msg tea.Msg) tea.Cmd {
@@ -161,6 +187,9 @@ func (l *LogView) updateSearch(msg tea.Msg) tea.Cmd {
 			l.searchQuery = l.searchInput.Value()
 			l.searching = false
 			l.searchInput.Blur()
+			if l.autoScroll {
+				l.scrollToBottom()
+			}
 			return nil
 		}
 	}
@@ -206,39 +235,126 @@ func (l LogView) View() string {
 		lineCount++
 	}
 
+	// Status line.
+	b.WriteString(l.renderStatusLine(len(filtered)))
+
+	// Search bar.
 	if l.searching {
+		b.WriteString("\n")
 		b.WriteString(theme.SearchStyle.Render("/") + l.searchInput.View())
 	}
 
 	return b.String()
 }
 
-func (l LogView) visibleLines() []messages.LogLine {
-	if l.searchQuery == "" {
-		return l.lines
+func (l LogView) renderStatusLine(filteredCount int) string {
+	var parts []string
+
+	// Level filter indicator.
+	levelName := levelFilterName(l.levelFilter)
+	if l.levelFilter != messages.LogLevelUnknown {
+		parts = append(parts, theme.SearchStyle.Render(fmt.Sprintf("[f]ilter:%s", levelName)))
+	} else {
+		parts = append(parts, theme.LogTimestampStyle.Render("[f]ilter:ALL"))
 	}
 
-	var filtered []messages.LogLine
-	query := strings.ToLower(l.searchQuery)
-	for _, line := range l.lines {
-		if strings.Contains(strings.ToLower(line.Text), query) {
-			filtered = append(filtered, line)
-		}
+	// Search indicator.
+	if l.searchQuery != "" {
+		parts = append(parts, theme.SearchStyle.Render(fmt.Sprintf("[/]search:%q", l.searchQuery)))
 	}
-	return filtered
+
+	// Line count.
+	total := len(l.lines)
+	if filteredCount != total {
+		parts = append(parts, theme.LogTimestampStyle.Render(fmt.Sprintf("%d/%d lines", filteredCount, total)))
+	} else {
+		parts = append(parts, theme.LogTimestampStyle.Render(fmt.Sprintf("%d lines", total)))
+	}
+
+	content := strings.Join(parts, "  ")
+	return theme.StatusBarStyle.Width(l.width).Render(content)
+}
+
+func levelFilterName(level messages.LogLevel) string {
+	switch level {
+	case messages.LogLevelError:
+		return "ERROR+"
+	case messages.LogLevelWarn:
+		return "WARN+"
+	case messages.LogLevelInfo:
+		return "INFO+"
+	case messages.LogLevelDebug:
+		return "DEBUG+"
+	default:
+		return "ALL"
+	}
+}
+
+func (l LogView) visibleLines() []messages.LogLine {
+	lines := l.lines
+
+	// Apply level filter.
+	if l.levelFilter != messages.LogLevelUnknown {
+		var filtered []messages.LogLine
+		for _, line := range lines {
+			if line.Level >= l.levelFilter {
+				filtered = append(filtered, line)
+			}
+		}
+		lines = filtered
+	}
+
+	// Apply search filter.
+	if l.searchQuery != "" {
+		var filtered []messages.LogLine
+		query := strings.ToLower(l.searchQuery)
+		for _, line := range lines {
+			if strings.Contains(strings.ToLower(line.Text), query) {
+				filtered = append(filtered, line)
+			}
+		}
+		lines = filtered
+	}
+
+	return lines
 }
 
 func (l LogView) renderLine(line messages.LogLine) string {
 	var parts []string
 
+	// Source label for merged views.
+	if line.Source != "" && l.sourceLabel == "" {
+		sourceTag := fmt.Sprintf("[%s]", line.SourceID)
+		parts = append(parts, theme.LogTimestampStyle.Render(sourceTag))
+	}
+
+	// Timestamp.
 	if !line.Time.IsZero() {
 		ts := line.Time.Format("15:04:05")
 		parts = append(parts, theme.LogTimestampStyle.Render(ts))
 	}
 
+	// Text with level coloring and search highlighting.
 	text := line.Text
+	styled := l.styleText(text, line.Level)
+	parts = append(parts, styled)
+
+	result := strings.Join(parts, " ")
+	if len(result) > l.width && l.width > 0 {
+		return result[:l.width]
+	}
+	return fmt.Sprintf("%-*s", l.width, result)
+}
+
+func (l LogView) styleText(text string, level messages.LogLevel) string {
+	// Apply search highlighting.
+	if l.searchQuery != "" {
+		text = l.highlightSearch(text)
+	}
+
+	// Apply level coloring.
 	var style lipgloss.Style
-	switch line.Level {
+	switch level {
 	case messages.LogLevelDebug:
 		style = theme.LogDebugStyle
 	case messages.LogLevelInfo:
@@ -250,10 +366,29 @@ func (l LogView) renderLine(line messages.LogLine) string {
 	case messages.LogLevelFatal:
 		style = theme.LogFatalStyle
 	default:
-		parts = append(parts, text)
-		return fmt.Sprintf("%-*s", l.width, strings.Join(parts, " "))
+		return text
 	}
 
-	parts = append(parts, style.Render(text))
-	return fmt.Sprintf("%-*s", l.width, strings.Join(parts, " "))
+	return style.Render(text)
+}
+
+func (l LogView) highlightSearch(text string) string {
+	if l.searchQuery == "" {
+		return text
+	}
+
+	lower := strings.ToLower(text)
+	query := strings.ToLower(l.searchQuery)
+	idx := strings.Index(lower, query)
+	if idx < 0 {
+		return text
+	}
+
+	// Highlight the first match.
+	before := text[:idx]
+	match := text[idx : idx+len(l.searchQuery)]
+	after := text[idx+len(l.searchQuery):]
+
+	highlighted := theme.SearchStyle.Bold(true).Render(match)
+	return before + highlighted + after
 }
