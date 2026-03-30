@@ -102,6 +102,12 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 		t.sidebar.SetItems(containers)
+		// Auto-select first item on initial load.
+		if t.selectedIID == 0 {
+			if item, ok := t.sidebar.SelectedItem(); ok {
+				return t, t.selectMR(item.ID)
+			}
+		}
 		return t, nil
 
 	case mrDetailFetchMsg:
