@@ -101,6 +101,9 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		for _, p := range msg.Pipelines {
 			t.pipelines = append(t.pipelines, p)
 			group := fmt.Sprintf("!%s", p.MRIid)
+			if p.MRTitle != "" {
+				group += " " + truncate(p.MRTitle, 40)
+			}
 			containers = append(containers, pipelineToContainer(p, group))
 		}
 		t.sidebar.SetItems(containers)
@@ -222,6 +225,9 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
+		case "ctrl+r":
+			t.notification = "Refreshing..."
+			return t, t.fetchPipelines()
 		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
 			return t, nil

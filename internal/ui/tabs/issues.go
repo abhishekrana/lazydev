@@ -236,6 +236,9 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
+		case "ctrl+r":
+			t.notification = "Refreshing..."
+			return t, t.fetchIssues()
 		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
 			return t, nil
