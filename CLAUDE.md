@@ -47,6 +47,12 @@ go build ./... # Build all packages (check compilation)
 - **Pane switching**: `Ctrl+W W` and `Alt+W` toggle focus between sidebar and log pane (vim-style). `Enter` on sidebar item also moves focus to logs.
 - **Two-key sequences**: `gg` (go to top) and `Ctrl+W w` use pending state flags (e.g., `pendingG`, `pendingCtrlW`).
 
+## Rules
+
+- **Never commit personal info**: no names, emails, IP addresses, tokens, or company references
+- **Solarized Light**: Test that text is readable on light background
+- **Keep it simple**: minimal dependencies, no over-engineering
+
 ## Conventions
 
 - Do not add Co-Authored-By lines to commit messages
