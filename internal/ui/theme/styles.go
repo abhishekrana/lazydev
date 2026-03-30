@@ -1,8 +1,170 @@
 package theme
 
 import (
+	"charm.land/glamour/v2/ansi"
 	"charm.land/lipgloss/v2"
 )
+
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T { return &v }
+
+// SolarizedMarkdownStyle returns a glamour style config using the solarized light palette.
+func SolarizedMarkdownStyle() ansi.StyleConfig {
+	return ansi.StyleConfig{
+		Document: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				BlockPrefix: "\n",
+				BlockSuffix: "\n",
+				Color:       ptr("#586E75"), // SolBase01 — body text
+			},
+			Margin: ptr(uint(0)),
+		},
+		BlockQuote: ansi.StyleBlock{
+			Indent:      ptr(uint(1)),
+			IndentToken: ptr("│ "),
+			StylePrimitive: ansi.StylePrimitive{
+				Color:  ptr("#93A1A1"), // SolBase1
+				Italic: ptr(true),
+			},
+		},
+		Paragraph: ansi.StyleBlock{},
+		List: ansi.StyleList{
+			LevelIndent: 2,
+		},
+		Heading: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				BlockSuffix: "\n",
+				Color:       ptr("#268BD2"), // SolBlue
+				Bold:        ptr(true),
+			},
+		},
+		H1: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix: "# ",
+				Color:  ptr("#268BD2"), // SolBlue
+				Bold:   ptr(true),
+			},
+		},
+		H2: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix: "## ",
+				Color:  ptr("#6C71C4"), // SolViolet
+				Bold:   ptr(true),
+			},
+		},
+		H3: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix: "### ",
+				Color:  ptr("#2AA198"), // SolCyan
+				Bold:   ptr(true),
+			},
+		},
+		H4: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix: "#### ",
+				Color:  ptr("#859900"), // SolGreen
+			},
+		},
+		H5: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix: "##### ",
+				Color:  ptr("#B58900"), // SolYellow
+			},
+		},
+		H6: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix: "###### ",
+				Color:  ptr("#839496"), // SolBase0
+			},
+		},
+		Text: ansi.StylePrimitive{},
+		Strikethrough: ansi.StylePrimitive{
+			CrossedOut: ptr(true),
+		},
+		Emph: ansi.StylePrimitive{
+			Italic: ptr(true),
+			Color:  ptr("#657B83"), // SolBase00
+		},
+		Strong: ansi.StylePrimitive{
+			Bold:  ptr(true),
+			Color: ptr("#073642"), // SolBase02
+		},
+		HorizontalRule: ansi.StylePrimitive{
+			Color:  ptr("#93A1A1"), // SolBase1
+			Format: "\n────────\n",
+		},
+		Item: ansi.StylePrimitive{
+			BlockPrefix: "• ",
+		},
+		Enumeration: ansi.StylePrimitive{
+			BlockPrefix: ". ",
+		},
+		Task: ansi.StyleTask{
+			Ticked:   "[✓] ",
+			Unticked: "[ ] ",
+		},
+		Link: ansi.StylePrimitive{
+			Color:     ptr("#268BD2"), // SolBlue
+			Underline: ptr(true),
+		},
+		LinkText: ansi.StylePrimitive{
+			Color: ptr("#2AA198"), // SolCyan
+			Bold:  ptr(true),
+		},
+		Image: ansi.StylePrimitive{
+			Color:     ptr("#D33682"), // SolMagenta
+			Underline: ptr(true),
+		},
+		ImageText: ansi.StylePrimitive{
+			Color:  ptr("#839496"), // SolBase0
+			Format: "Image: {{.text}} →",
+		},
+		Code: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{
+				Prefix:          " ",
+				Suffix:          " ",
+				Color:           ptr("#CB4B16"), // SolOrange
+				BackgroundColor: ptr("#EEE8D5"), // SolBase2
+			},
+		},
+		CodeBlock: ansi.StyleCodeBlock{
+			StyleBlock: ansi.StyleBlock{
+				StylePrimitive: ansi.StylePrimitive{
+					Color: ptr("#586E75"), // SolBase01
+				},
+				Margin: ptr(uint(2)),
+			},
+			Chroma: &ansi.Chroma{
+				Text:              ansi.StylePrimitive{Color: ptr("#586E75")},
+				Error:             ansi.StylePrimitive{Color: ptr("#DC322F")},
+				Comment:           ansi.StylePrimitive{Color: ptr("#93A1A1")},
+				CommentPreproc:    ansi.StylePrimitive{Color: ptr("#CB4B16")},
+				Keyword:           ansi.StylePrimitive{Color: ptr("#268BD2")},
+				KeywordReserved:   ansi.StylePrimitive{Color: ptr("#D33682")},
+				KeywordNamespace:  ansi.StylePrimitive{Color: ptr("#DC322F")},
+				KeywordType:       ansi.StylePrimitive{Color: ptr("#6C71C4")},
+				Operator:          ansi.StylePrimitive{Color: ptr("#859900")},
+				Punctuation:       ansi.StylePrimitive{Color: ptr("#586E75")},
+				Name:              ansi.StylePrimitive{},
+				NameBuiltin:       ansi.StylePrimitive{Color: ptr("#268BD2")},
+				NameTag:           ansi.StylePrimitive{Color: ptr("#268BD2")},
+				NameAttribute:     ansi.StylePrimitive{Color: ptr("#2AA198")},
+				NameClass:         ansi.StylePrimitive{Color: ptr("#B58900"), Bold: ptr(true)},
+				NameConstant:      ansi.StylePrimitive{Color: ptr("#2AA198")},
+				NameDecorator:     ansi.StylePrimitive{Color: ptr("#CB4B16")},
+				NameFunction:      ansi.StylePrimitive{Color: ptr("#268BD2")},
+				LiteralNumber:     ansi.StylePrimitive{Color: ptr("#D33682")},
+				LiteralString:     ansi.StylePrimitive{Color: ptr("#2AA198")},
+				LiteralStringEscape: ansi.StylePrimitive{Color: ptr("#CB4B16")},
+				GenericDeleted:    ansi.StylePrimitive{Color: ptr("#DC322F")},
+				GenericEmph:       ansi.StylePrimitive{Italic: ptr(true)},
+				GenericInserted:   ansi.StylePrimitive{Color: ptr("#859900")},
+				GenericStrong:     ansi.StylePrimitive{Bold: ptr(true)},
+				GenericSubheading: ansi.StylePrimitive{Color: ptr("#93A1A1")},
+			},
+		},
+	}
+}
 
 // Solarized Light palette.
 var (

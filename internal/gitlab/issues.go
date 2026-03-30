@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/glamour/v2"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 
+	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
@@ -269,9 +271,10 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		b.WriteString("MERGE REQUESTS\n")
 		for _, mr := range relatedMRs {
 			stateIcon := "●"
-			if mr.State == "merged" {
+			switch mr.State {
+			case "merged":
 				stateIcon = "✓"
-			} else if mr.State == "closed" {
+			case "closed":
 				stateIcon = "✗"
 			}
 			fmt.Fprintf(&b, "  %s !%d %s [%s]\n", stateIcon, mr.IID, mr.Title, mr.State)
@@ -281,8 +284,7 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 
 	if issue.Description != "" {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString(issue.Description)
-		b.WriteString("\n")
+		b.WriteString(renderMarkdown(issue.Description))
 	}
 
 	if len(notes) > 0 {
@@ -291,12 +293,27 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
 			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(note.Body)
-			b.WriteString("\n")
+			b.WriteString(renderMarkdown(note.Body))
 		}
 	}
 
 	return b.String()
+}
+
+// renderMarkdown renders markdown text for terminal display using glamour.
+func renderMarkdown(text string) string {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStyles(theme.SolarizedMarkdownStyle()),
+		glamour.WithWordWrap(0), // no wrapping, let the pane handle it
+	)
+	if err != nil {
+		return text
+	}
+	out, err := r.Render(text)
+	if err != nil {
+		return text
+	}
+	return strings.TrimRight(out, "\n")
 }
 
 func safeTime(t *time.Time) time.Time {
