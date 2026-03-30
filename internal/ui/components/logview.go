@@ -27,6 +27,7 @@ type LogView struct {
 	sourceLabel string
 	levelFilter messages.LogLevel // LogLevelUnknown = show all
 	pendingG    bool
+	wrapLines   bool
 }
 
 // NewLogView creates a new log viewport.
@@ -144,6 +145,12 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 			return nil
 		case key.Matches(msg, theme.Keys.Filter):
 			l.cycleFilter()
+			if l.autoScroll {
+				l.scrollToBottom()
+			}
+		case msg.String() == "w":
+			l.wrapLines = !l.wrapLines
+			l.offset = 0
 			if l.autoScroll {
 				l.scrollToBottom()
 			}
@@ -283,11 +290,30 @@ func (l LogView) View() string {
 	}
 
 	lineCount := 0
-	for i := start; i < end; i++ {
-		rendered := l.renderLine(filtered[i])
-		b.WriteString(rendered)
-		b.WriteString("\n")
-		lineCount++
+	for i := start; i < end && lineCount < viewable; i++ {
+		if l.wrapLines && l.width > 0 {
+			// Wrap mode: split raw text into pane-width chunks.
+			raw := l.rawLine(filtered[i])
+			for len(raw) > 0 && lineCount < viewable {
+				chunk := raw
+				if len(chunk) > l.width {
+					chunk = raw[:l.width]
+					raw = raw[l.width:]
+				} else {
+					raw = ""
+				}
+				styled := l.styleText(chunk, filtered[i].Level)
+				b.WriteString(styled)
+				b.WriteString("\n")
+				lineCount++
+			}
+		} else {
+			// No-wrap mode: truncate to pane width.
+			rendered := l.renderLine(filtered[i])
+			b.WriteString(rendered)
+			b.WriteString("\n")
+			lineCount++
+		}
 	}
 
 	for lineCount < viewable {
@@ -317,6 +343,13 @@ func (l LogView) renderStatusLine(filteredCount int) string {
 		parts = append(parts, theme.SearchStyle.Render(fmt.Sprintf("[f]ilter:%s", levelName)))
 	} else {
 		parts = append(parts, theme.LogTimestampStyle.Render("[f]ilter:ALL"))
+	}
+
+	// Wrap indicator.
+	if l.wrapLines {
+		parts = append(parts, theme.SearchStyle.Render("[w]rap:ON"))
+	} else {
+		parts = append(parts, theme.LogTimestampStyle.Render("[w]rap:OFF"))
 	}
 
 	// Search indicator.
@@ -349,6 +382,19 @@ func levelFilterName(level messages.LogLevel) string {
 	default:
 		return "ALL"
 	}
+}
+
+// rawLine returns the unstyled text for a log line (for wrapping).
+func (l LogView) rawLine(line messages.LogLine) string {
+	var parts []string
+	if line.Source != "" && l.sourceLabel == "" {
+		parts = append(parts, fmt.Sprintf("[%s]", line.SourceID))
+	}
+	if !line.Time.IsZero() {
+		parts = append(parts, line.Time.Format("15:04:05"))
+	}
+	parts = append(parts, line.Text)
+	return strings.Join(parts, " ")
 }
 
 func (l LogView) visibleLines() []messages.LogLine {
