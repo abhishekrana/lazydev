@@ -162,59 +162,27 @@ func (d DetailPane) View() string {
 		return b.String()
 	}
 
-	contentWidth := d.width - 1 // reserve 1 col for scrollbar
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
-
 	end := d.offset + viewable
 	if end > len(d.lines) {
 		end = len(d.lines)
 	}
 
-	thumbStart, thumbEnd := d.scrollbarThumb(len(d.lines), viewable, d.offset)
-
 	lineCount := 0
 	for i := d.offset; i < end; i++ {
 		line := d.lines[i]
-		if len(line) > contentWidth && contentWidth > 0 {
-			line = line[:contentWidth]
+		if len(line) > d.width && d.width > 0 {
+			line = line[:d.width]
 		}
 		b.WriteString(line)
-		// Pad to contentWidth for scrollbar alignment.
-		if pad := contentWidth - len(line); pad > 0 {
-			b.WriteString(strings.Repeat(" ", pad))
-		}
-		b.WriteString(d.scrollbarChar(lineCount, thumbStart, thumbEnd))
 		b.WriteString("\n")
 		lineCount++
 	}
 
 	for lineCount < viewable {
-		b.WriteString(strings.Repeat(" ", contentWidth))
-		b.WriteString(d.scrollbarChar(lineCount, thumbStart, thumbEnd))
+		b.WriteString(strings.Repeat(" ", d.width))
 		b.WriteString("\n")
 		lineCount++
 	}
 
 	return b.String()
-}
-
-func (d DetailPane) scrollbarThumb(totalLines, viewable, offset int) (int, int) {
-	if totalLines <= viewable || viewable <= 0 {
-		return -1, -1
-	}
-	thumbSize := max(1, viewable*viewable/totalLines)
-	thumbPos := offset * (viewable - thumbSize) / max(1, totalLines-viewable)
-	return thumbPos, thumbPos + thumbSize
-}
-
-func (d DetailPane) scrollbarChar(row, thumbStart, thumbEnd int) string {
-	if thumbStart < 0 {
-		return " "
-	}
-	if row >= thumbStart && row < thumbEnd {
-		return theme.ScrollbarThumbStyle.Render("┃")
-	}
-	return " "
 }
