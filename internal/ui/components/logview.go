@@ -352,11 +352,7 @@ func (l LogView) renderLine(line messages.LogLine) string {
 	styled := l.styleText(text, line.Level)
 	parts = append(parts, styled)
 
-	result := strings.Join(parts, " ")
-	if len(result) > l.width && l.width > 0 {
-		return result[:l.width]
-	}
-	return fmt.Sprintf("%-*s", l.width, result)
+	return strings.Join(parts, " ")
 }
 
 func (l LogView) styleText(text string, level messages.LogLevel) string {
