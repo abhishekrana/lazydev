@@ -30,6 +30,8 @@ type MRsTab struct {
 	notification string
 	pendingCtrlW bool
 	refreshS     int
+	fetchSeq     uint64
+	pendingFetch string
 }
 
 // NewMRsTab creates a new GitLab Merge Requests tab.
@@ -102,13 +104,23 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		t.sidebar.SetItems(containers)
 		return t, nil
 
-	case messages.MRDetailMsg:
-		if msg.Err != nil {
-			t.notification = fmt.Sprintf("MR detail: %v", msg.Err)
+	case mrDetailFetchMsg:
+		if msg.itemID == t.pendingFetch {
+			t.detailPane.SetContent("Loading...", "Fetching MR details...")
+			return t, t.selectMR(msg.itemID)
+		}
+		return t, nil
+
+	case mrDetailResultMsg:
+		if msg.seq != t.fetchSeq {
 			return t, nil
 		}
-		detail := gitlabpkg.FormatMRDetail(msg.MR, msg.Notes)
-		t.detailPane.SetContent(fmt.Sprintf("!%d %s", msg.MR.IID, msg.MR.Title), detail)
+		if msg.err != nil {
+			t.notification = fmt.Sprintf("MR detail: %v", msg.err)
+			return t, nil
+		}
+		detail := gitlabpkg.FormatMRDetail(msg.mr, msg.notes)
+		t.detailPane.SetContent(fmt.Sprintf("!%d %s", msg.mr.IID, msg.mr.Title), detail)
 		return t, nil
 
 	case messages.MRActionMsg:
@@ -225,8 +237,10 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
 		if newItem, ok := t.sidebar.SelectedItem(); ok && newItem.ID != prevItem.ID {
-			t.detailPane.SetContent("Loading...", "Fetching MR details...")
-			return t, tea.Batch(cmd, t.selectMR(newItem.ID))
+			t.pendingFetch = newItem.ID
+			return t, tea.Batch(cmd, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+				return mrDetailFetchMsg{itemID: newItem.ID}
+			}))
 		}
 		return t, cmd
 	}
@@ -272,10 +286,12 @@ func (t *MRsTab) selectMR(id string) tea.Cmd {
 	var iid int64
 	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck // best effort
 	t.selectedIID = iid
+	t.fetchSeq++
+	seq := t.fetchSeq
 
 	return func() tea.Msg {
 		mr, notes, err := t.client.GetMR(iid)
-		return messages.MRDetailMsg{MR: mr, Notes: notes, Err: err}
+		return mrDetailResultMsg{seq: seq, mr: mr, notes: notes, err: err}
 	}
 }
 
@@ -343,6 +359,15 @@ func (t *MRsTab) reviewInNeovim(mr *messages.GitLabMR) tea.Cmd {
 }
 
 type mrRefreshTickMsg struct{}
+
+type mrDetailFetchMsg struct{ itemID string }
+
+type mrDetailResultMsg struct {
+	seq   uint64
+	mr    messages.GitLabMR
+	notes []messages.GitLabNote
+	err   error
+}
 
 func (t *MRsTab) tickRefresh() tea.Cmd {
 	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {

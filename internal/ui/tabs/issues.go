@@ -31,6 +31,8 @@ type IssuesTab struct {
 	notification string
 	pendingCtrlW bool
 	refreshS     int
+	fetchSeq     uint64 // incremented on each detail fetch, used to discard stale responses
+	pendingFetch string // sidebar item ID waiting for debounce
 }
 
 // NewIssuesTab creates a new GitLab Issues tab.
@@ -110,13 +112,25 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		t.sidebar.SetItems(containers)
 		return t, nil
 
-	case messages.IssueDetailMsg:
-		if msg.Err != nil {
-			t.notification = fmt.Sprintf("issue detail: %v", msg.Err)
+	case issueDetailFetchMsg:
+		// Only fetch if this is still the pending item (debounce).
+		if msg.itemID == t.pendingFetch {
+			t.detailPane.SetContent("Loading...", "Fetching issue details...")
+			return t, t.selectIssue(msg.itemID)
+		}
+		return t, nil
+
+	case issueDetailResultMsg:
+		// Discard stale responses.
+		if msg.seq != t.fetchSeq {
 			return t, nil
 		}
-		detail := gitlabpkg.FormatIssueDetail(msg.Issue, msg.Notes)
-		t.detailPane.SetContent(fmt.Sprintf("#%d %s", msg.Issue.IID, msg.Issue.Title), detail)
+		if msg.err != nil {
+			t.notification = fmt.Sprintf("issue detail: %v", msg.err)
+			return t, nil
+		}
+		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes)
+		t.detailPane.SetContent(fmt.Sprintf("#%d %s", msg.issue.IID, msg.issue.Title), detail)
 		return t, nil
 
 	case messages.IssueActionMsg:
@@ -215,10 +229,12 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
-		// Auto-fetch details when cursor moves to a different item.
+		// Debounce detail fetch when cursor moves to a different item.
 		if newItem, ok := t.sidebar.SelectedItem(); ok && newItem.ID != prevItem.ID {
-			t.detailPane.SetContent("Loading...", "Fetching issue details...")
-			return t, tea.Batch(cmd, t.selectIssue(newItem.ID))
+			t.pendingFetch = newItem.ID
+			return t, tea.Batch(cmd, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+				return issueDetailFetchMsg{itemID: newItem.ID}
+			}))
 		}
 		return t, cmd
 	}
@@ -265,14 +281,15 @@ func (t *IssuesTab) fetchIssues() tea.Cmd {
 }
 
 func (t *IssuesTab) selectIssue(id string) tea.Cmd {
-	// Parse IID from the sidebar item ID (format: "123").
 	var iid int64
 	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck // best effort
 	t.selectedIID = iid
+	t.fetchSeq++
+	seq := t.fetchSeq
 
 	return func() tea.Msg {
 		issue, notes, err := t.client.GetIssue(iid)
-		return messages.IssueDetailMsg{Issue: issue, Notes: notes, Err: err}
+		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, err: err}
 	}
 }
 
@@ -322,6 +339,19 @@ func (t *IssuesTab) commentOnIssue(iid int64) tea.Cmd {
 }
 
 type issueRefreshTickMsg struct{}
+
+// issueDetailFetchMsg is a debounced trigger to fetch issue details.
+type issueDetailFetchMsg struct {
+	itemID string
+}
+
+// issueDetailResultMsg wraps IssueDetailMsg with a sequence number for staleness check.
+type issueDetailResultMsg struct {
+	seq   uint64
+	issue messages.GitLabIssue
+	notes []messages.GitLabNote
+	err   error
+}
 
 func (t *IssuesTab) tickRefresh() tea.Cmd {
 	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {

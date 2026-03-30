@@ -39,6 +39,8 @@ type PipelinesTab struct {
 	notification   string
 	pendingCtrlW   bool
 	refreshS       int
+	fetchSeq       uint64
+	pendingFetch   string
 }
 
 // NewPipelinesTab creates a new GitLab Pipelines tab.
@@ -108,16 +110,26 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		t.sidebar.SetItems(containers)
 		return t, nil
 
-	case messages.PipelineJobsMsg:
-		if msg.Err != nil {
-			t.notification = fmt.Sprintf("jobs: %v", msg.Err)
+	case pipelineDetailFetchMsg:
+		if msg.itemID == t.pendingFetch {
+			t.detailPane.SetContent("Loading...", "Fetching pipeline jobs...")
+			return t, t.selectPipeline(msg.itemID)
+		}
+		return t, nil
+
+	case pipelineJobsResultMsg:
+		if msg.seq != t.fetchSeq {
 			return t, nil
 		}
-		t.jobs = msg.Jobs
+		if msg.err != nil {
+			t.notification = fmt.Sprintf("jobs: %v", msg.err)
+			return t, nil
+		}
+		t.jobs = msg.jobs
 		t.selectedJobIdx = 0
-		pipeline := t.findPipeline(msg.PipelineID)
+		pipeline := t.findPipeline(msg.pipelineID)
 		if pipeline != nil {
-			detail := gitlabpkg.FormatPipelineDetail(*pipeline, msg.Jobs)
+			detail := gitlabpkg.FormatPipelineDetail(*pipeline, msg.jobs)
 			t.detailPane.SetContent(fmt.Sprintf("Pipeline #%d", pipeline.ID), detail)
 		}
 		t.rightPane = pipelineRightDetail
@@ -252,8 +264,10 @@ func (t *PipelinesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd)
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
 		if newItem, ok := t.sidebar.SelectedItem(); ok && newItem.ID != prevItem.ID {
-			t.detailPane.SetContent("Loading...", "Fetching pipeline jobs...")
-			return t, tea.Batch(cmd, t.selectPipeline(newItem.ID))
+			t.pendingFetch = newItem.ID
+			return t, tea.Batch(cmd, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+				return pipelineDetailFetchMsg{itemID: newItem.ID}
+			}))
 		}
 		return t, cmd
 	}
@@ -303,10 +317,12 @@ func (t *PipelinesTab) selectPipeline(id string) tea.Cmd {
 	var pid int64
 	fmt.Sscanf(id, "%d", &pid) //nolint:errcheck // best effort
 	t.selectedID = pid
+	t.fetchSeq++
+	seq := t.fetchSeq
 
 	return func() tea.Msg {
 		jobs, err := t.client.GetPipelineJobs(pid)
-		return messages.PipelineJobsMsg{PipelineID: pid, Jobs: jobs, Err: err}
+		return pipelineJobsResultMsg{seq: seq, pipelineID: pid, jobs: jobs, err: err}
 	}
 }
 
@@ -325,6 +341,15 @@ func (t *PipelinesTab) cancelPipeline(id int64) tea.Cmd {
 }
 
 type pipelineRefreshTickMsg struct{}
+
+type pipelineDetailFetchMsg struct{ itemID string }
+
+type pipelineJobsResultMsg struct {
+	seq        uint64
+	pipelineID int64
+	jobs       []messages.GitLabJob
+	err        error
+}
 
 func (t *PipelinesTab) tickRefresh() tea.Cmd {
 	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {
