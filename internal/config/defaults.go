@@ -13,6 +13,9 @@ func DefaultConfig() *Config {
 			Kubeconfig: "", // auto-detect
 			Context:    "", // current context
 		},
+		GitLab: GitLabConfig{
+			RefreshIntervalS: 30,
+		},
 		UI: UIConfig{
 			Theme:            "dark",
 			SidebarWidth:     30,

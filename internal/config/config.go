@@ -11,7 +11,16 @@ import (
 type Config struct {
 	Docker     DockerConfig     `yaml:"docker"`
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
+	GitLab     GitLabConfig     `yaml:"gitlab"`
 	UI         UIConfig         `yaml:"ui"`
+}
+
+// GitLabConfig holds GitLab-specific settings.
+type GitLabConfig struct {
+	URL              string `yaml:"url"`
+	Token            string `yaml:"token"`
+	Project          string `yaml:"project"`
+	RefreshIntervalS int    `yaml:"refresh_interval_s"`
 }
 
 // DockerConfig holds Docker-specific settings.

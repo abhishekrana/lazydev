@@ -160,11 +160,140 @@ type ClipboardMsg struct {
 
 // DiscoveryResultMsg reports which backends are available.
 type DiscoveryResultMsg struct {
-	DockerAvailable bool
-	DockerHost      string
-	KubeAvailable   bool
-	KubeContext     string
-	Warnings        []string
+	DockerAvailable  bool
+	DockerHost       string
+	KubeAvailable    bool
+	KubeContext      string
+	GitLabAvailable  bool
+	GitLabProject    string
+	Warnings         []string
+}
+
+// --- GitLab data types ---
+
+// GitLabIssue represents a GitLab issue.
+type GitLabIssue struct {
+	ID, IID, ProjectID int64
+	Title              string
+	State              string
+	Description        string
+	Labels             []string
+	Milestone          string
+	Author             string
+	Assignee           string
+	WebURL             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+// GitLabMR represents a GitLab merge request.
+type GitLabMR struct {
+	ID, IID, ProjectID int64
+	Title              string
+	State              string
+	SourceBranch       string
+	TargetBranch       string
+	Author             string
+	Reviewers          []string
+	Labels             []string
+	PipelineStatus     string
+	WebURL             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+// GitLabPipeline represents a GitLab CI pipeline.
+type GitLabPipeline struct {
+	ID, ProjectID int64
+	Status        string
+	Ref           string
+	SHA           string
+	WebURL        string
+	Duration      float64
+	CreatedAt     time.Time
+	FinishedAt    time.Time
+}
+
+// GitLabJob represents a job within a pipeline.
+type GitLabJob struct {
+	ID       int64
+	Name     string
+	Stage    string
+	Status   string
+	Duration float64
+	WebURL   string
+}
+
+// GitLabNote represents a comment on an issue or MR.
+type GitLabNote struct {
+	Author    string
+	Body      string
+	CreatedAt time.Time
+}
+
+// --- GitLab messages ---
+
+// IssueListMsg delivers issue lists from GitLab.
+type IssueListMsg struct {
+	Assigned []GitLabIssue
+	Created  []GitLabIssue
+	Mentioned []GitLabIssue
+	Err      error
+}
+
+// IssueDetailMsg delivers a single issue with notes.
+type IssueDetailMsg struct {
+	Issue GitLabIssue
+	Notes []GitLabNote
+	Err   error
+}
+
+// IssueActionMsg reports the result of an issue action.
+type IssueActionMsg struct {
+	Action string
+	Err    error
+}
+
+// MRListMsg delivers merge request lists from GitLab.
+type MRListMsg struct {
+	Mine            []GitLabMR
+	ReviewRequested []GitLabMR
+	AllOpen         []GitLabMR
+	Err             error
+}
+
+// MRDetailMsg delivers a single MR with notes.
+type MRDetailMsg struct {
+	MR    GitLabMR
+	Notes []GitLabNote
+	Err   error
+}
+
+// MRActionMsg reports the result of a MR action.
+type MRActionMsg struct {
+	Action string
+	Err    error
+}
+
+// PipelineListMsg delivers pipeline lists from GitLab.
+type PipelineListMsg struct {
+	Mine []GitLabPipeline
+	All  []GitLabPipeline
+	Err  error
+}
+
+// PipelineJobsMsg delivers jobs for a pipeline.
+type PipelineJobsMsg struct {
+	PipelineID int64
+	Jobs       []GitLabJob
+	Err        error
+}
+
+// JobLogMsg delivers log lines for a pipeline job.
+type JobLogMsg struct {
+	JobID int64
+	Log   string
+	Err   error
 }
 
 // SwitchTabMsg requests switching to a specific tab.

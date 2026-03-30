@@ -127,7 +127,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
 			m.tabBar.ActiveTab = m.activeTab
 			return m, nil
-		case msg.String() == "1", msg.String() == "2", msg.String() == "3", msg.String() == "4":
+		case msg.String() >= "1" && msg.String() <= "9":
 			idx := int(msg.String()[0] - '1')
 			if idx >= 0 && idx < len(m.tabs) {
 				m.activeTab = idx
@@ -164,7 +164,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messages.LogBatchMsg, messages.ContainerListMsg, messages.ResourceStatsMsg,
 		messages.ContainerActionMsg, messages.ContainerInspectMsg,
 		messages.LogStreamErrorMsg, messages.ExecFinishedMsg, messages.ScaleMsg,
-		messages.LogExportedMsg:
+		messages.LogExportedMsg,
+		messages.IssueListMsg, messages.IssueDetailMsg, messages.IssueActionMsg,
+		messages.MRListMsg, messages.MRDetailMsg, messages.MRActionMsg,
+		messages.PipelineListMsg, messages.PipelineJobsMsg, messages.JobLogMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
 			var cmd tea.Cmd

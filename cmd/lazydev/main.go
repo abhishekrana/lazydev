@@ -38,8 +38,18 @@ func main() {
 	// Dashboard tab.
 	tabModels = append(tabModels, tabs.NewDashboardTab(state.DockerClient, state.KubeClient))
 
+	// GitLab tabs.
+	if state.GitLabClient != nil {
+		refreshS := cfg.GitLab.RefreshIntervalS
+		tabModels = append(tabModels,
+			tabs.NewIssuesTab(state.GitLabClient, refreshS),
+			tabs.NewMRsTab(state.GitLabClient, refreshS),
+			tabs.NewPipelinesTab(state.GitLabClient, refreshS),
+		)
+	}
+
 	if len(tabModels) <= 1 {
-		fmt.Fprintln(os.Stderr, "Error: No backends available. Ensure Docker is running or kubeconfig exists.")
+		fmt.Fprintln(os.Stderr, "Error: No backends available. Ensure Docker is running, kubeconfig exists, or GitLab is configured.")
 		os.Exit(1)
 	}
 

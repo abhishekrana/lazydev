@@ -5,6 +5,7 @@ import (
 
 	"github.com/abhishek-rana/lazydev/internal/config"
 	"github.com/abhishek-rana/lazydev/internal/docker"
+	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
 	"github.com/abhishek-rana/lazydev/internal/kube"
 	logpkg "github.com/abhishek-rana/lazydev/internal/log"
 )
@@ -13,6 +14,7 @@ import (
 type SharedState struct {
 	DockerClient *docker.Client
 	KubeClient   *kube.Client
+	GitLabClient *gitlabpkg.Client
 	StreamMgr    *logpkg.StreamManager
 	Config       *config.Config
 	cancel       context.CancelFunc
@@ -38,6 +40,12 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 	kc, err := kube.NewClient(cfg.Kubernetes.Kubeconfig)
 	if err == nil {
 		state.KubeClient = kc
+	}
+
+	// Try GitLab.
+	gc, err := gitlabpkg.NewClient(cfg.GitLab.URL, cfg.GitLab.Token, cfg.GitLab.Project)
+	if err == nil {
+		state.GitLabClient = gc
 	}
 
 	return state, nil
