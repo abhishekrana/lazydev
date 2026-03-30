@@ -1,0 +1,259 @@
+package tabs
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"time"
+
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"github.com/abhishek-rana/lazydk/internal/docker"
+	logpkg "github.com/abhishek-rana/lazydk/internal/log"
+	"github.com/abhishek-rana/lazydk/internal/ui"
+	"github.com/abhishek-rana/lazydk/internal/ui/components"
+	"github.com/abhishek-rana/lazydk/internal/ui/layout"
+	"github.com/abhishek-rana/lazydk/internal/ui/theme"
+	"github.com/abhishek-rana/lazydk/pkg/messages"
+)
+
+// DockerTab is the Docker container management tab.
+type DockerTab struct {
+	client       *docker.Client
+	streamMgr    *logpkg.StreamManager
+	sidebar      components.Sidebar
+	logView      components.LogView
+	focusSidebar bool
+	width        int
+	height       int
+	selected     string
+	containers   []messages.Container
+}
+
+// NewDockerTab creates a new Docker tab.
+func NewDockerTab(client *docker.Client, streamMgr *logpkg.StreamManager) *DockerTab {
+	sidebar := components.NewSidebar()
+	sidebar.SetFocused(true)
+
+	return &DockerTab{
+		client:       client,
+		streamMgr:    streamMgr,
+		sidebar:      sidebar,
+		logView:      components.NewLogView(),
+		focusSidebar: true,
+	}
+}
+
+func (t *DockerTab) Title() string { return "Docker" }
+
+func (t *DockerTab) SetSize(width, height int) {
+	t.width = width
+	t.height = height
+
+	sidebarWidth := width * 30 / 100
+	if sidebarWidth < 20 {
+		sidebarWidth = 20
+	}
+	t.sidebar.SetSize(sidebarWidth, height)
+	t.logView.SetSize(width-sidebarWidth, height)
+}
+
+func (t *DockerTab) Init() tea.Cmd {
+	return tea.Batch(
+		t.fetchContainers(),
+		t.tickRefresh(),
+	)
+}
+
+func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case messages.ContainerListMsg:
+		if msg.Err == nil && msg.Source == "docker" {
+			t.containers = msg.Containers
+			t.sidebar.SetItems(msg.Containers)
+
+			if t.selected == "" {
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					return t, t.selectContainer(item.ID, item.Name)
+				}
+			}
+		}
+		return t, nil
+
+	case messages.LogBatchMsg:
+		if msg.SourceID == t.selected {
+			t.logView.AppendLines(msg.Lines)
+		}
+		return t, t.waitForLogs(msg.SourceID)
+
+	case messages.LogStreamErrorMsg:
+		return t, nil
+
+	case messages.ContainerActionMsg:
+		if msg.Err == nil {
+			cmds = append(cmds, t.fetchContainers())
+		}
+		return t, tea.Batch(cmds...)
+
+	case refreshTickMsg:
+		return t, tea.Batch(t.fetchContainers(), t.tickRefresh())
+
+	case tea.KeyPressMsg:
+		if t.focusSidebar {
+			switch {
+			case key.Matches(msg, theme.Keys.Right):
+				t.focusSidebar = false
+				t.sidebar.SetFocused(false)
+				t.logView.SetFocused(true)
+				return t, nil
+			case key.Matches(msg, theme.Keys.Enter):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					return t, t.selectContainer(item.ID, item.Name)
+				}
+			case key.Matches(msg, theme.Keys.Restart):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					return t, t.restartContainer(item.ID, item.Name)
+				}
+			case key.Matches(msg, theme.Keys.Stop):
+				if item, ok := t.sidebar.SelectedItem(); ok {
+					return t, t.stopContainer(item.ID, item.Name)
+				}
+			}
+
+			prevItem, _ := t.sidebar.SelectedItem()
+			cmd := t.sidebar.Update(msg)
+			cmds = append(cmds, cmd)
+
+			if item, ok := t.sidebar.SelectedItem(); ok && item.ID != prevItem.ID {
+				cmds = append(cmds, t.selectContainer(item.ID, item.Name))
+			}
+		} else {
+			switch {
+			case key.Matches(msg, theme.Keys.Left):
+				t.focusSidebar = true
+				t.sidebar.SetFocused(true)
+				t.logView.SetFocused(false)
+				return t, nil
+			}
+
+			cmd := t.logView.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	return t, tea.Batch(cmds...)
+}
+
+func (t *DockerTab) View() string {
+	sidebarWidth := t.width * 30 / 100
+	if sidebarWidth < 20 {
+		sidebarWidth = 20
+	}
+	return layout.HorizontalSplit(
+		t.sidebar.View(),
+		t.logView.View(),
+		sidebarWidth,
+		t.width,
+		t.height,
+	)
+}
+
+func (t *DockerTab) selectContainer(id, name string) tea.Cmd {
+	if t.selected != "" {
+		t.streamMgr.StopStream(t.selected)
+	}
+
+	t.selected = id
+	t.logView.Clear()
+	t.logView.SetSourceLabel(fmt.Sprintf(" %s ", name))
+
+	return func() tea.Msg {
+		ctx := context.Background()
+		reader, err := t.client.GetLogs(ctx, id, 100)
+		if err != nil {
+			return messages.LogStreamErrorMsg{SourceID: id, Err: err}
+		}
+
+		ch := t.streamMgr.StartStream(id, reader, "docker")
+		return readLogBatch(id, ch)
+	}
+}
+
+func (t *DockerTab) fetchContainers() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		containers, err := t.client.ListContainers(ctx)
+		return messages.ContainerListMsg{
+			Containers: containers,
+			Source:     "docker",
+			Err:        err,
+		}
+	}
+}
+
+func (t *DockerTab) restartContainer(id, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := t.client.RestartContainer(ctx, id)
+		return messages.ContainerActionMsg{Action: "restart", ID: id, Name: name, Err: err}
+	}
+}
+
+func (t *DockerTab) stopContainer(id, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		err := t.client.StopContainer(ctx, id)
+		return messages.ContainerActionMsg{Action: "stop", ID: id, Name: name, Err: err}
+	}
+}
+
+func (t *DockerTab) waitForLogs(sourceID string) tea.Cmd {
+	ch := t.streamMgr.GetChannel(sourceID)
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		return readLogBatch(sourceID, ch)
+	}
+}
+
+func readLogBatch(sourceID string, ch <-chan messages.LogLine) tea.Msg {
+	batch := make([]messages.LogLine, 0, 100)
+	timeout := time.NewTimer(50 * time.Millisecond)
+	defer timeout.Stop()
+
+	line, ok := <-ch
+	if !ok {
+		return messages.LogStreamErrorMsg{SourceID: sourceID, Err: io.EOF}
+	}
+	batch = append(batch, line)
+
+	for {
+		select {
+		case line, ok := <-ch:
+			if !ok {
+				return messages.LogBatchMsg{Lines: batch, SourceID: sourceID}
+			}
+			batch = append(batch, line)
+			if len(batch) >= 100 {
+				return messages.LogBatchMsg{Lines: batch, SourceID: sourceID}
+			}
+		case <-timeout.C:
+			return messages.LogBatchMsg{Lines: batch, SourceID: sourceID}
+		}
+	}
+}
+
+type refreshTickMsg struct{}
+
+func (t *DockerTab) tickRefresh() tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+		return refreshTickMsg{}
+	})
+}

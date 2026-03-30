@@ -24,6 +24,10 @@ profile.cov
 go.work
 go.work.sum
 
+# Built binary
+lazydk
+dist/
+
 # env file
 .env
 
