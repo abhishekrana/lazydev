@@ -127,6 +127,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
 			m.tabBar.ActiveTab = m.activeTab
 			return m, nil
+		case msg.String() == "1", msg.String() == "2", msg.String() == "3", msg.String() == "4":
+			idx := int(msg.String()[0] - '1')
+			if idx >= 0 && idx < len(m.tabs) {
+				m.activeTab = idx
+				m.tabBar.ActiveTab = m.activeTab
+			}
+			return m, nil
 		}
 
 	case messages.SwitchTabMsg:
