@@ -33,10 +33,16 @@ func (c *Client) ListMyPipelines() ([]messages.GitLabPipeline, error) {
 		}
 	}
 
-	// Filter to MR pipelines only.
+	// Filter to MR pipelines only, keep latest per MR+type.
+	seenMRType := make(map[string]bool)
 	var result []messages.GitLabPipeline
 	for _, p := range all {
-		if p.MRIid != "" {
+		if p.MRIid == "" {
+			continue
+		}
+		key := p.MRIid + "/" + p.PipelineType
+		if !seenMRType[key] {
+			seenMRType[key] = true
 			result = append(result, p)
 		}
 	}
