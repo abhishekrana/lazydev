@@ -219,6 +219,7 @@ type GitLabPipeline struct {
 	CreatedAt     time.Time
 	FinishedAt    time.Time
 	MRIid         string // parsed from ref, e.g. "1353" (empty for non-MR pipelines)
+	MRTitle       string // MR title, fetched from bulk open MR list
 	PipelineType  string // "merge", "train", "head" (empty for non-MR pipelines)
 }
 
