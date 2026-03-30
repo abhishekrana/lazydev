@@ -59,6 +59,16 @@ go build ./...   # Build all packages (check compilation)
 - **Never commit personal info**: no names, emails, IP addresses, tokens, or company references
 - **Solarized Light**: Test that text is readable on light background
 - **Keep it simple**: minimal dependencies, no over-engineering
+- **Keep code consistent across tabs**: All tabs (Docker, K8s, Issues, MRs, Pipelines) must follow the same patterns:
+  - Tab struct fields: `client`, `sidebar`, `detailPane`/`logView`, `modal`, `focusSidebar`, `width`, `height`, `selectedIID`/`selectedID`, `notification`, `pendingCtrlW`, `refreshS`, `fetchSeq`, `pendingFetch`, `needsAutoSelect`
+  - `Init()` returns `tea.Batch(fetchData(), tickRefresh())`
+  - `Update()` handles: list msg → populate sidebar + set `needsAutoSelect`; `TabActivatedMsg` → auto-select; detail result msg → set detail pane; action msg → show notification + re-fetch; refresh tick → re-fetch + re-tick
+  - Sidebar actions: `Enter` select, `o` open browser, `s` close/reopen toggle, `c` comment via `$EDITOR`
+  - Pane switching: `Ctrl+W W` / `Alt+W` via `pendingCtrlW` flag and `toggleFocus()`
+  - Detail fetch debounce: 150ms tick with `pendingFetch` + `fetchSeq` for stale response discard
+  - Destructive actions use confirmation modal (`modal.Show` with callback)
+  - Sidebar groups: "My X" → "Other X" → "All X" pattern
+  - When adding a feature to one tab, check if it applies to other tabs and add it there too
 
 ## Conventions
 
@@ -66,12 +76,14 @@ go build ./...   # Build all packages (check compilation)
 - Docker containers are grouped by `com.docker.compose.project` label; standalone containers go to "standalone" group
 - Keybindings support both vim-style (hjkl) and arrow keys simultaneously via `key.NewBinding` with multiple keys
 - Config path: `~/.config/lazydev/config.yaml` (XDG compliant)
-- Sidebar width is 15% of terminal width
+- Sidebar width is 15% of terminal width (GitLab tabs use 25%)
 - Log lines are truncated to pane width (no wrap by default); `w` toggles wrap mode
+- Markdown content in GitLab detail panes is rendered via glamour with `WithWordWrap(paneWidth)`
+- Relative GitLab URLs are resolved to absolute URLs; `/uploads/` paths use `/-/project/{id}/uploads/` format
 
 ## Current Status
 
-All 7 phases complete, plus UX polish:
+All 8 phases complete, plus UX polish:
 
 - Phase 1: Docker tab with live log tailing, sidebar, search, container actions
 - Phase 2: Collapsible groups, confirmation modal, inspect detail pane
@@ -81,4 +93,4 @@ All 7 phases complete, plus UX polish:
 - Phase 6: Exec shell (x), port-forward (p), scale deployment (S)
 - Phase 7: Help overlay (?), command palette (:), goreleaser config
 - UX polish: Solarized Light theme, vim gg/G navigation, sidebar `/` search, Ctrl+W W pane switching, cursor highlight in log pane, wrap toggle (w), log export (y/Y/e/E/o), Docker header & ANSI stripping, mouse click/scroll support, 1-9 tab selection
-- GitLab: Issues tab (assigned/created, close/reopen, comment, assign), MRs tab (mine/review-requested, approve, merge, neovim DiffviewOpen review), Pipelines tab (jobs, job logs, retry/cancel)
+- Phase 8: GitLab integration — Issues (sprint grouping, related MRs), MRs (approve, merge, DiffviewOpen review), Pipelines (jobs, live job logs, retry/cancel), markdown rendering (glamour solarized), Ctrl+click URLs, tab auto-select on activation
