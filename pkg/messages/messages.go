@@ -6,7 +6,7 @@ import (
 
 // LogLine represents a single log line from any source.
 type LogLine struct {
-	Source    string
+	Source   string
 	SourceID string
 	Text     string
 	Level    LogLevel
@@ -27,15 +27,15 @@ const (
 
 // Container represents a generic container/pod resource.
 type Container struct {
-	ID        string
-	Name      string
-	Status    string
-	State     ContainerState
-	Source    string // "docker" or "kubernetes"
-	Group     string // compose project or k8s namespace
-	Image     string
-	Created   time.Time
-	Restarts  int
+	ID       string
+	Name     string
+	Status   string
+	State    ContainerState
+	Source   string // "docker" or "kubernetes"
+	Group    string // compose project or k8s namespace
+	Image    string
+	Created  time.Time
+	Restarts int
 }
 
 // ContainerState represents the running state.
@@ -78,10 +78,10 @@ type LogStreamErrorMsg struct {
 
 // ContainerActionMsg reports the result of a container action.
 type ContainerActionMsg struct {
-	Action   string // "restart", "stop", "remove"
-	ID       string
-	Name     string
-	Err      error
+	Action string // "restart", "stop", "remove"
+	ID     string
+	Name   string
+	Err    error
 }
 
 // ContainerInspectMsg delivers container inspect/describe data.

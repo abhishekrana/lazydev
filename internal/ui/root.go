@@ -50,7 +50,7 @@ func NewRootModel(tabs []TabModel) RootModel {
 
 // Init initializes the root model and all tabs.
 func (m RootModel) Init() tea.Cmd {
-	var cmds []tea.Cmd
+	cmds := make([]tea.Cmd, 0, len(m.tabs))
 	for _, tab := range m.tabs {
 		cmds = append(cmds, tab.Init())
 	}

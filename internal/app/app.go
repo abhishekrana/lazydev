@@ -42,6 +42,6 @@ func (s *SharedState) Close() {
 		s.StreamMgr.StopAll()
 	}
 	if s.DockerClient != nil {
-		s.DockerClient.Close()
+		_ = s.DockerClient.Close()
 	}
 }

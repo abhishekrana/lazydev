@@ -38,8 +38,8 @@ func ParseLogLevel(text string) messages.LogLevel {
 // timestampFormats lists common timestamp layouts to try, ordered from
 // most specific to least specific.
 var timestampFormats = []string{
-	time.RFC3339Nano,                // 2006-01-02T15:04:05.999999999Z07:00
-	time.RFC3339,                    // 2006-01-02T15:04:05Z07:00
+	time.RFC3339Nano,               // 2006-01-02T15:04:05.999999999Z07:00
+	time.RFC3339,                   // 2006-01-02T15:04:05Z07:00
 	"2006-01-02T15:04:05.000Z0700", // ISO 8601 variant
 	"2006-01-02T15:04:05",          // ISO 8601 without timezone
 	"2006-01-02 15:04:05.000",      // Common log format with millis

@@ -33,7 +33,7 @@ func NewLogView() LogView {
 	ti.CharLimit = 256
 
 	return LogView{
-		autoScroll: true,
+		autoScroll:  true,
 		searchInput: ti,
 	}
 }

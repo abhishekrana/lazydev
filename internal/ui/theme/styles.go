@@ -58,7 +58,7 @@ var (
 				Bold(true).
 				PaddingLeft(1)
 
-	LogViewStyle     = lipgloss.NewStyle()
+	LogViewStyle      = lipgloss.NewStyle()
 	LogTimestampStyle = lipgloss.NewStyle().Foreground(ColorDimText)
 	LogDebugStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#268BD2"))
 	LogInfoStyle      = lipgloss.NewStyle().Foreground(ColorSuccess)

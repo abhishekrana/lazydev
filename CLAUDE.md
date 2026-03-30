@@ -11,6 +11,9 @@ make build     # Build binary (output: ./lazydk)
 make run       # Build and run
 make clean     # Remove binary
 make tidy      # go mod tidy
+make fmt       # Format all Go files (gofmt + goimports)
+make lint      # Run golangci-lint
+make check     # Format + lint + build (run before committing)
 go build ./... # Build all packages (check compilation)
 ```
 

@@ -43,7 +43,7 @@ func Load() *Config {
 	cfg := DefaultConfig()
 
 	path := configPath()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // config path is not user-controlled
 	if err != nil {
 		return cfg
 	}

@@ -49,7 +49,7 @@ func (sm *StreamManager) StartStream(id string, reader io.ReadCloser, source str
 		// Do not close the channel here; the goroutine owns it.
 	}
 
-	ctx, cancel := context.WithCancel(sm.parent)
+	ctx, cancel := context.WithCancel(sm.parent) //nolint:gosec // cancel is stored in stream and called by StopStream
 	ch := make(chan messages.LogLine, 128)
 
 	s := &stream{
@@ -68,7 +68,7 @@ func (sm *StreamManager) StartStream(id string, reader io.ReadCloser, source str
 // when done.
 func (sm *StreamManager) readLoop(ctx context.Context, id string, reader io.ReadCloser, source string, ch chan messages.LogLine) {
 	defer close(ch)
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	scanner := bufio.NewScanner(reader)
 	// Allow lines up to 1 MB.

@@ -41,7 +41,6 @@ type DockerTab struct {
 	selectedName string
 	containers   []messages.Container
 	notification string
-	notifyTimer  *time.Timer
 }
 
 // NewDockerTab creates a new Docker tab.
