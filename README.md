@@ -48,15 +48,20 @@ go install github.com/abhishekrana/lazydev/cmd/lazydev@latest
 ## Usage
 
 ```bash
-# Run with auto-detection (finds Docker and/or K8s automatically)
+# Run with auto-detection (finds Docker, K8s, and GitLab automatically)
 lazydev
 
-# Specify Docker host
-lazydev --docker-host tcp://localhost:2375
+# Run from a GitLab repo (auto-detects project from git remote)
+cd ~/my-gitlab-project && lazydev
 
-# Specify kubeconfig
-lazydev --kubeconfig ~/.kube/my-config
+# Or set project explicitly in config (~/.config/lazydev/config.yaml)
+# gitlab:
+#   project: "mygroup/myproject"
+#   additional_users:           # include bot account activity
+#     - my-bot-username
 ```
+
+GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.yml`), `GITLAB_TOKEN` env, or `gitlab.token` in config.
 
 ## Keybindings
 
