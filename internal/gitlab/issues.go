@@ -16,11 +16,11 @@ func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabI
 	seenCreated := make(map[int64]bool)
 
 	// Fetch assigned issues for all tracked users.
-	for _, uid := range c.UserIDs {
+	for _, username := range c.Usernames {
 		opts := &gitlab.ListProjectIssuesOptions{
-			State:       gitlab.Ptr("opened"),
-			ListOptions: gitlab.ListOptions{PerPage: 50},
-			AssigneeID:  gitlab.AssigneeID(uid),
+			State:            gitlab.Ptr("opened"),
+			ListOptions:      gitlab.ListOptions{PerPage: 50},
+			AssigneeUsername: gitlab.Ptr(username),
 		}
 		raw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
 		if err != nil {
