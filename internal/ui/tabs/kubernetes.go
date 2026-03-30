@@ -234,9 +234,12 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			case key.Matches(msg, theme.Keys.Enter):
 				cmd := t.sidebar.Update(msg)
 				if item, ok := t.sidebar.SelectedItem(); ok {
+					cmds := []tea.Cmd{cmd}
 					if item.ID != t.selected || item.Group != t.selectedNs {
-						return t, tea.Batch(cmd, t.selectPod(item.ID, item.Name, item.Group))
+						cmds = append(cmds, t.selectPod(item.ID, item.Name, item.Group))
 					}
+					t.toggleFocus() // move to log pane
+					return t, tea.Batch(cmds...)
 				}
 				return t, cmd
 			case key.Matches(msg, theme.Keys.Delete):

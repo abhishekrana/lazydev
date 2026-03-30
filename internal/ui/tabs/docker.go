@@ -220,11 +220,14 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			case key.Matches(msg, theme.Keys.Enter):
 				// Let sidebar handle group collapse first.
 				cmd := t.sidebar.Update(msg)
-				// If an item is selected (not a group), also select the container.
+				// If an item is selected (not a group), select it and move focus to logs.
 				if item, ok := t.sidebar.SelectedItem(); ok {
+					cmds := []tea.Cmd{cmd}
 					if item.ID != t.selected {
-						return t, tea.Batch(cmd, t.selectContainer(item.ID, item.Name))
+						cmds = append(cmds, t.selectContainer(item.ID, item.Name))
 					}
+					t.toggleFocus() // move to log pane
+					return t, tea.Batch(cmds...)
 				}
 				return t, cmd
 			case key.Matches(msg, theme.Keys.Restart):
