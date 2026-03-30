@@ -111,27 +111,27 @@ func convertPipelines(raw []*gitlab.PipelineInfo) []messages.GitLabPipeline {
 func FormatPipelineDetail(pipeline messages.GitLabPipeline, jobs []messages.GitLabJob) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("Pipeline #%d [%s]\n", pipeline.ID, pipeline.Status))
+	fmt.Fprintf(&b, "Pipeline #%d [%s]\n", pipeline.ID, pipeline.Status)
 	b.WriteString(strings.Repeat("─", 60) + "\n")
 
-	b.WriteString(fmt.Sprintf("Ref:     %s\n", pipeline.Ref))
+	fmt.Fprintf(&b, "Ref:     %s\n", pipeline.Ref)
 	if pipeline.SHA != "" {
 		sha := pipeline.SHA
 		if len(sha) > 8 {
 			sha = sha[:8]
 		}
-		b.WriteString(fmt.Sprintf("SHA:     %s\n", sha))
+		fmt.Fprintf(&b, "SHA:     %s\n", sha)
 	}
 	if pipeline.Duration > 0 {
-		b.WriteString(fmt.Sprintf("Duration: %.0fs\n", pipeline.Duration))
+		fmt.Fprintf(&b, "Duration: %.0fs\n", pipeline.Duration)
 	}
 	if !pipeline.CreatedAt.IsZero() {
-		b.WriteString(fmt.Sprintf("Created: %s\n", pipeline.CreatedAt.Format("2006-01-02 15:04")))
+		fmt.Fprintf(&b, "Created: %s\n", pipeline.CreatedAt.Format("2006-01-02 15:04"))
 	}
 	if !pipeline.FinishedAt.IsZero() {
-		b.WriteString(fmt.Sprintf("Finished: %s\n", pipeline.FinishedAt.Format("2006-01-02 15:04")))
+		fmt.Fprintf(&b, "Finished: %s\n", pipeline.FinishedAt.Format("2006-01-02 15:04"))
 	}
-	b.WriteString(fmt.Sprintf("URL:     %s\n", pipeline.WebURL))
+	fmt.Fprintf(&b, "URL:     %s\n", pipeline.WebURL)
 
 	if len(jobs) > 0 {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
@@ -142,14 +142,14 @@ func FormatPipelineDetail(pipeline messages.GitLabPipeline, jobs []messages.GitL
 		for _, job := range jobs {
 			if job.Stage != currentStage {
 				currentStage = job.Stage
-				b.WriteString(fmt.Sprintf("  [%s]\n", currentStage))
+				fmt.Fprintf(&b, "  [%s]\n", currentStage)
 			}
 			icon := jobStatusIcon(job.Status)
 			dur := ""
 			if job.Duration > 0 {
 				dur = fmt.Sprintf(" (%.0fs)", job.Duration)
 			}
-			b.WriteString(fmt.Sprintf("    %s %s%s\n", icon, job.Name, dur))
+			fmt.Fprintf(&b, "    %s %s%s\n", icon, job.Name, dur)
 		}
 	}
 

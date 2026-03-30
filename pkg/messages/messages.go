@@ -160,13 +160,13 @@ type ClipboardMsg struct {
 
 // DiscoveryResultMsg reports which backends are available.
 type DiscoveryResultMsg struct {
-	DockerAvailable  bool
-	DockerHost       string
-	KubeAvailable    bool
-	KubeContext      string
-	GitLabAvailable  bool
-	GitLabProject    string
-	Warnings         []string
+	DockerAvailable bool
+	DockerHost      string
+	KubeAvailable   bool
+	KubeContext     string
+	GitLabAvailable bool
+	GitLabProject   string
+	Warnings        []string
 }
 
 // --- GitLab data types ---
@@ -235,10 +235,10 @@ type GitLabNote struct {
 
 // IssueListMsg delivers issue lists from GitLab.
 type IssueListMsg struct {
-	Assigned []GitLabIssue
-	Created  []GitLabIssue
+	Assigned  []GitLabIssue
+	Created   []GitLabIssue
 	Mentioned []GitLabIssue
-	Err      error
+	Err       error
 }
 
 // IssueDetailMsg delivers a single issue with notes.

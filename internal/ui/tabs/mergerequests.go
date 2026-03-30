@@ -168,11 +168,11 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 
-		switch {
-		case s == "ctrl+w" || s == "ctrl+W":
+		switch s {
+		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
 			return t, nil
-		case s == "alt+w" || s == "alt+W":
+		case "alt+w", "alt+W": //nolint:goconst // key names
 			t.toggleFocus()
 			return t, nil
 		}
@@ -296,7 +296,7 @@ func (t *MRsTab) fetchMRs() tea.Cmd {
 
 func (t *MRsTab) selectMR(id string) tea.Cmd {
 	var iid int64
-	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck // best effort
+	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck,gosec // best effort
 	t.selectedIID = iid
 	t.fetchSeq++
 	seq := t.fetchSeq
@@ -363,7 +363,7 @@ func (t *MRsTab) reviewInNeovim(mr *messages.GitLabMR) tea.Cmd {
 	fetchCmd := fmt.Sprintf("git fetch origin %s && git checkout %s", mr.SourceBranch, mr.SourceBranch)
 	diffCmd := fmt.Sprintf("DiffviewOpen origin/%s...%s", mr.TargetBranch, mr.SourceBranch)
 
-	shell := exec.Command("bash", "-c", //nolint:gosec // intentional shell exec
+	shell := exec.Command("bash", "-c", //nolint:gosec,noctx // intentional shell exec
 		fmt.Sprintf(`%s && nvim -c "%s"`, fetchCmd, diffCmd))
 	return tea.ExecProcess(shell, func(err error) tea.Msg {
 		return messages.ExecFinishedMsg{Err: err}
@@ -393,7 +393,7 @@ func (t *MRsTab) findSelectedMR() *messages.GitLabMR {
 		return nil
 	}
 	var iid int64
-	fmt.Sscanf(item.ID, "%d", &iid) //nolint:errcheck // best effort
+	fmt.Sscanf(item.ID, "%d", &iid) //nolint:errcheck,gosec // best effort
 	for i := range t.mrs {
 		if t.mrs[i].IID == iid {
 			return &t.mrs[i]

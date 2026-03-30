@@ -13,12 +13,12 @@ import (
 
 // Client wraps the GitLab API client.
 type Client struct {
-	Raw        *gitlab.Client
-	ProjectID  string  // project path e.g. "mygroup/myproject"
-	UserID     int64   // authenticated user's ID
-	Username   string  // authenticated user's username
-	UserIDs    []int64 // all user IDs to track (self + additional users like bots)
-	Usernames  []string // all usernames to track
+	Raw       *gitlab.Client
+	ProjectID string   // project path e.g. "mygroup/myproject"
+	UserID    int64    // authenticated user's ID
+	Username  string   // authenticated user's username
+	UserIDs   []int64  // all user IDs to track (self + additional users like bots)
+	Usernames []string // all usernames to track
 }
 
 // NewClient creates a GitLab client with token discovery.
@@ -95,8 +95,8 @@ func NewClient(url, token, project string, additionalUsers []string) (*Client, e
 
 // glabConfig represents the glab CLI config structure.
 type glabConfig struct {
-	Host  string                       `yaml:"host"`
-	Hosts map[string]glabHostConfig    `yaml:"hosts"`
+	Host  string                    `yaml:"host"`
+	Hosts map[string]glabHostConfig `yaml:"hosts"`
 }
 
 type glabHostConfig struct {
@@ -183,7 +183,7 @@ func extractTokenFromRaw(data []byte, host string) string {
 //   - git@gitlab.com:group/project.git → group/project
 //   - https://gitlab.com/group/project.git → group/project
 func detectProjectFromGitRemote(gitlabURL string) string {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output() //nolint:gosec // well-known command
+	out, err := exec.Command("git", "remote", "get-url", "origin").Output() //nolint:gosec,noctx // well-known command
 	if err != nil {
 		return ""
 	}

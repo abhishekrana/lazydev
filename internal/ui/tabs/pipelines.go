@@ -207,11 +207,11 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 
-		switch {
-		case s == "ctrl+w" || s == "ctrl+W":
+		switch s {
+		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
 			return t, nil
-		case s == "alt+w" || s == "alt+W":
+		case "alt+w", "alt+W": //nolint:goconst // key names
 			t.toggleFocus()
 			return t, nil
 		}
@@ -323,7 +323,7 @@ func (t *PipelinesTab) fetchPipelines() tea.Cmd {
 
 func (t *PipelinesTab) selectPipeline(id string) tea.Cmd {
 	var pid int64
-	fmt.Sscanf(id, "%d", &pid) //nolint:errcheck // best effort
+	fmt.Sscanf(id, "%d", &pid) //nolint:errcheck,gosec // best effort
 	t.selectedID = pid
 	t.fetchSeq++
 	seq := t.fetchSeq
@@ -371,7 +371,7 @@ func (t *PipelinesTab) findSelectedPipeline() *messages.GitLabPipeline {
 		return nil
 	}
 	var id int64
-	fmt.Sscanf(item.ID, "%d", &id) //nolint:errcheck // best effort
+	fmt.Sscanf(item.ID, "%d", &id) //nolint:errcheck,gosec // best effort
 	return t.findPipeline(id)
 }
 

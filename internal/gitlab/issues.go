@@ -150,10 +150,10 @@ func convertIssues(raw []*gitlab.Issue) []messages.GitLabIssue {
 
 func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 	var assignee string
-	if issue.Assignee != nil {
-		assignee = issue.Assignee.Username
+	if len(issue.Assignees) > 0 {
+		assignee = issue.Assignees[0].Username
 	}
-	var labels []string
+	labels := make([]string, 0, len(issue.Labels))
 	for _, l := range issue.Labels {
 		labels = append(labels, l)
 	}
@@ -182,22 +182,22 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("#%d %s [%s]\n", issue.IID, issue.Title, issue.State))
+	fmt.Fprintf(&b, "#%d %s [%s]\n", issue.IID, issue.Title, issue.State)
 	b.WriteString(strings.Repeat("─", 60) + "\n")
 
 	if issue.Assignee != "" {
-		b.WriteString(fmt.Sprintf("Assignee:  %s\n", issue.Assignee))
+		fmt.Fprintf(&b, "Assignee:  %s\n", issue.Assignee)
 	}
-	b.WriteString(fmt.Sprintf("Author:    %s\n", issue.Author))
+	fmt.Fprintf(&b, "Author:    %s\n", issue.Author)
 	if len(issue.Labels) > 0 {
-		b.WriteString(fmt.Sprintf("Labels:    %s\n", strings.Join(issue.Labels, ", ")))
+		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(issue.Labels, ", "))
 	}
 	if issue.Milestone != "" {
-		b.WriteString(fmt.Sprintf("Milestone: %s\n", issue.Milestone))
+		fmt.Fprintf(&b, "Milestone: %s\n", issue.Milestone)
 	}
-	b.WriteString(fmt.Sprintf("Created:   %s\n", issue.CreatedAt.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("Updated:   %s\n", issue.UpdatedAt.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("URL:       %s\n", issue.WebURL))
+	fmt.Fprintf(&b, "Created:   %s\n", issue.CreatedAt.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&b, "Updated:   %s\n", issue.UpdatedAt.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&b, "URL:       %s\n", issue.WebURL)
 
 	if issue.Description != "" {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
@@ -210,7 +210,7 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote) 
 		b.WriteString("COMMENTS\n")
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
-			b.WriteString(fmt.Sprintf("\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04")))
+			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
 			b.WriteString(note.Body)
 			b.WriteString("\n")
 		}

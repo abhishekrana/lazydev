@@ -178,11 +178,11 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			}
 		}
 
-		switch {
-		case s == "ctrl+w" || s == "ctrl+W":
+		switch s {
+		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
 			return t, nil
-		case s == "alt+w" || s == "alt+W":
+		case "alt+w", "alt+W": //nolint:goconst // key names
 			t.toggleFocus()
 			return t, nil
 		}
@@ -298,7 +298,7 @@ func (t *IssuesTab) fetchIssues() tea.Cmd {
 
 func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 	var iid int64
-	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck // best effort
+	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck,gosec // best effort
 	t.selectedIID = iid
 	t.fetchSeq++
 	seq := t.fetchSeq
@@ -381,7 +381,7 @@ func (t *IssuesTab) findSelectedIssue() *messages.GitLabIssue {
 		return nil
 	}
 	var iid int64
-	fmt.Sscanf(item.ID, "%d", &iid) //nolint:errcheck // best effort
+	fmt.Sscanf(item.ID, "%d", &iid) //nolint:errcheck,gosec // best effort
 	for i := range t.issues {
 		if t.issues[i].IID == iid {
 			return &t.issues[i]
@@ -419,7 +419,7 @@ func issueInList(issue messages.GitLabIssue, list []messages.GitLabIssue) bool {
 
 // openBrowser opens a URL in the default browser.
 func openBrowser(url string) error {
-	return exec.Command("xdg-open", url).Start() //nolint:gosec // intentional browser open
+	return exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
 }
 
 func truncate(s string, max int) string {

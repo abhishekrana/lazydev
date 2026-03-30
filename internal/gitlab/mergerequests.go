@@ -143,7 +143,7 @@ func convertBasicMR(mr *gitlab.BasicMergeRequest) messages.GitLabMR {
 	if mr.Author != nil {
 		author = mr.Author.Username
 	}
-	var labels []string
+	labels := make([]string, 0, len(mr.Labels))
 	for _, l := range mr.Labels {
 		labels = append(labels, l)
 	}
@@ -164,11 +164,11 @@ func convertBasicMR(mr *gitlab.BasicMergeRequest) messages.GitLabMR {
 }
 
 func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
-	var reviewers []string
+	reviewers := make([]string, 0, len(mr.Reviewers))
 	for _, r := range mr.Reviewers {
 		reviewers = append(reviewers, r.Username)
 	}
-	var labels []string
+	labels := make([]string, 0, len(mr.Labels))
 	for _, l := range mr.Labels {
 		labels = append(labels, l)
 	}
@@ -200,30 +200,30 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("!%d %s [%s]\n", mr.IID, mr.Title, mr.State))
+	fmt.Fprintf(&b, "!%d %s [%s]\n", mr.IID, mr.Title, mr.State)
 	b.WriteString(strings.Repeat("─", 60) + "\n")
 
-	b.WriteString(fmt.Sprintf("Branch:    %s → %s\n", mr.SourceBranch, mr.TargetBranch))
-	b.WriteString(fmt.Sprintf("Author:    %s\n", mr.Author))
+	fmt.Fprintf(&b, "Branch:    %s → %s\n", mr.SourceBranch, mr.TargetBranch)
+	fmt.Fprintf(&b, "Author:    %s\n", mr.Author)
 	if len(mr.Reviewers) > 0 {
-		b.WriteString(fmt.Sprintf("Reviewers: %s\n", strings.Join(mr.Reviewers, ", ")))
+		fmt.Fprintf(&b, "Reviewers: %s\n", strings.Join(mr.Reviewers, ", "))
 	}
 	if len(mr.Labels) > 0 {
-		b.WriteString(fmt.Sprintf("Labels:    %s\n", strings.Join(mr.Labels, ", ")))
+		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(mr.Labels, ", "))
 	}
 	if mr.PipelineStatus != "" {
-		b.WriteString(fmt.Sprintf("Pipeline:  %s\n", mr.PipelineStatus))
+		fmt.Fprintf(&b, "Pipeline:  %s\n", mr.PipelineStatus)
 	}
-	b.WriteString(fmt.Sprintf("Created:   %s\n", mr.CreatedAt.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("Updated:   %s\n", mr.UpdatedAt.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("URL:       %s\n", mr.WebURL))
+	fmt.Fprintf(&b, "Created:   %s\n", mr.CreatedAt.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&b, "Updated:   %s\n", mr.UpdatedAt.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&b, "URL:       %s\n", mr.WebURL)
 
 	if len(notes) > 0 {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
 		b.WriteString("DISCUSSION\n")
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
-			b.WriteString(fmt.Sprintf("\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04")))
+			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
 			b.WriteString(note.Body)
 			b.WriteString("\n")
 		}
