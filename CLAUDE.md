@@ -49,7 +49,8 @@ go build ./...   # Build all packages (check compilation)
 - **SharedState**: Passed by pointer to tabs. Contains Docker client, K8s client, GitLab client, StreamManager, config. Only backend state is shared; UI state is per-tab.
 - **GitLab auth discovery**: config → `GITLAB_TOKEN` env → `~/.config/glab-cli/config.yml` (handles `!!null` YAML tag). Project auto-detected from `git remote get-url origin`.
 - **Multi-user tracking**: GitLab tabs query for both the authenticated user and configured `additional_users` (e.g. bot accounts).
-- **Message types**: All in `pkg/messages/` to avoid circular dependencies between UI and backend packages.
+- **Message types**: All in `pkg/messages/` to avoid circular dependencies between UI and backend packages. Exported message types are broadcast to all tabs; unexported (tab-local) types are only routed to the active tab.
+- **Tab activation**: Root sends `messages.TabActivatedMsg` when switching tabs. Tabs that need deferred work (e.g. auto-selecting first item after list loads) set a `needsAutoSelect` flag in the broadcast list handler and act on it in the `TabActivatedMsg` handler — never return commands producing local message types from broadcast handlers, as the results will be lost if the tab isn't active.
 - **Pane switching**: `Ctrl+W W` and `Alt+W` toggle focus between sidebar and log pane (vim-style). `Enter` on sidebar item also moves focus to logs.
 - **Two-key sequences**: `gg` (go to top) and `Ctrl+W w` use pending state flags (e.g., `pendingG`, `pendingCtrlW`).
 
