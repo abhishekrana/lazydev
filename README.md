@@ -18,7 +18,7 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 - **Auto-detect backends** — automatically finds Docker daemon, kubeconfig, and GitLab token (from glab CLI)
 - **GitLab Issues** — view assigned/created issues, sprint/iteration grouping, related MRs, close/reopen, comment, assign
 - **GitLab MRs** — track MRs, approve, merge, review with neovim DiffviewOpen, markdown descriptions
-- **GitLab Pipelines** — view pipeline jobs, job logs, retry/cancel pipelines
+- **GitLab Pipelines** — MR-centric view grouped by merge request, job logs, retry/cancel, Ctrl+R refresh
 - **Markdown rendering** — issue/MR descriptions and comments rendered with solarized theme via glamour
 - **Ctrl+click URLs** — open links in browser directly from detail panes
 - **Multi-user tracking** — track your own + bot account activity across issues/MRs/pipelines
@@ -114,6 +114,12 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 | `p` | Port forward               |
 | `S` | Scale deployment           |
 
+### GitLab (common)
+
+| Key      | Action         |
+| -------- | -------------- |
+| `Ctrl+R` | Manual refresh |
+
 ### GitLab Issues
 
 | Key | Action                    |
@@ -138,13 +144,13 @@ GitLab auth is auto-detected from `glab` CLI config (`~/.config/glab-cli/config.
 
 ### GitLab Pipelines
 
-| Key     | Action                  |
-| ------- | ----------------------- |
-| `Enter` | View jobs / job log     |
-| `Esc`   | Back to job list        |
-| `R`     | Retry failed pipeline   |
-| `C`     | Cancel running pipeline |
-| `o`     | Open in browser         |
+| Key     | Action                                    |
+| ------- | ----------------------------------------- |
+| `Enter` | View jobs / job log                       |
+| `Esc`   | Back to job list                          |
+| `R`     | Retry failed pipeline                     |
+| `C`     | Cancel running pipeline                   |
+| `o`     | Open in browser                           |
 
 ### Detail Pane
 
