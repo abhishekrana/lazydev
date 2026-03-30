@@ -178,18 +178,25 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 	} else if mr.Pipeline != nil {
 		pipelineStatus = mr.Pipeline.Status
 	}
+	var assignee string
+	if mr.Assignee != nil {
+		assignee = mr.Assignee.Username
+	}
 	return messages.GitLabMR{
 		ID:             mr.ID,
 		IID:            mr.IID,
 		ProjectID:      mr.ProjectID,
 		Title:          mr.Title,
 		State:          mr.State,
+		Description:    mr.Description,
 		SourceBranch:   mr.SourceBranch,
 		TargetBranch:   mr.TargetBranch,
 		Author:         mr.Author.Username,
+		Assignee:       assignee,
 		Reviewers:      reviewers,
 		Labels:         labels,
 		PipelineStatus: pipelineStatus,
+		ChangesCount:   mr.ChangesCount,
 		WebURL:         mr.WebURL,
 		CreatedAt:      safeTime(mr.CreatedAt),
 		UpdatedAt:      safeTime(mr.UpdatedAt),
@@ -205,6 +212,9 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote) string {
 
 	fmt.Fprintf(&b, "Branch:    %s → %s\n", mr.SourceBranch, mr.TargetBranch)
 	fmt.Fprintf(&b, "Author:    %s\n", mr.Author)
+	if mr.Assignee != "" {
+		fmt.Fprintf(&b, "Assignee:  %s\n", mr.Assignee)
+	}
 	if len(mr.Reviewers) > 0 {
 		fmt.Fprintf(&b, "Reviewers: %s\n", strings.Join(mr.Reviewers, ", "))
 	}
@@ -212,11 +222,20 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote) string {
 		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(mr.Labels, ", "))
 	}
 	if mr.PipelineStatus != "" {
-		fmt.Fprintf(&b, "Pipeline:  %s\n", mr.PipelineStatus)
+		icon := PipelineStatusIcon(mr.PipelineStatus)
+		fmt.Fprintf(&b, "Pipeline:  %s %s\n", icon, mr.PipelineStatus)
+	}
+	if mr.ChangesCount != "" {
+		fmt.Fprintf(&b, "Changes:   %s files\n", mr.ChangesCount)
 	}
 	fmt.Fprintf(&b, "Created:   %s\n", mr.CreatedAt.Format("2006-01-02 15:04"))
 	fmt.Fprintf(&b, "Updated:   %s\n", mr.UpdatedAt.Format("2006-01-02 15:04"))
 	fmt.Fprintf(&b, "URL:       %s\n", mr.WebURL)
+
+	if mr.Description != "" {
+		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
+		b.WriteString(renderMarkdown(mr.Description))
+	}
 
 	if len(notes) > 0 {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
@@ -224,7 +243,7 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote) string {
 		b.WriteString(strings.Repeat("─", 60) + "\n")
 		for _, note := range notes {
 			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(note.Body)
+			b.WriteString(renderMarkdown(note.Body))
 			b.WriteString("\n")
 		}
 	}

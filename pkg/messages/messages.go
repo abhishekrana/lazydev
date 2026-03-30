@@ -194,12 +194,15 @@ type GitLabMR struct {
 	ID, IID, ProjectID int64
 	Title              string
 	State              string
+	Description        string
 	SourceBranch       string
 	TargetBranch       string
 	Author             string
+	Assignee           string
 	Reviewers          []string
 	Labels             []string
 	PipelineStatus     string
+	ChangesCount       string
 	WebURL             string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
