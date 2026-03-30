@@ -458,7 +458,6 @@ func (l LogView) View() string {
 	return b.String()
 }
 
-
 func (l LogView) renderStatusLine(filteredCount int) string {
 	var parts []string
 

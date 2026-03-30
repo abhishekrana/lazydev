@@ -74,12 +74,12 @@
 
 ## Verification Plan
 
-| Test | How |
-|------|-----|
+| Test              | How                                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
 | Docker smoke test | `docker compose up` any project -> run `lazydev` -> containers appear -> select one -> live logs work |
-| K8s test | Point at minikube/kind -> pods listed by namespace -> pod logs stream |
-| Merged logs | All Logs tab -> logs from multiple sources interleaved by timestamp |
-| Actions | Restart container from TUI -> verify restart -> logs resume automatically |
-| Stress test | Tail high-volume log producer -> TUI stays responsive (batching works) |
-| No backends | Neither Docker nor K8s available -> clear error message and exit |
-| Single backend | Only Docker OR only K8s -> hide unavailable tab, show notice |
+| K8s test          | Point at minikube/kind -> pods listed by namespace -> pod logs stream                                 |
+| Merged logs       | All Logs tab -> logs from multiple sources interleaved by timestamp                                   |
+| Actions           | Restart container from TUI -> verify restart -> logs resume automatically                             |
+| Stress test       | Tail high-volume log producer -> TUI stays responsive (batching works)                                |
+| No backends       | Neither Docker nor K8s available -> clear error message and exit                                      |
+| Single backend    | Only Docker OR only K8s -> hide unavailable tab, show notice                                          |

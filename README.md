@@ -56,50 +56,50 @@ lazydev --kubeconfig ~/.kube/my-config
 
 ### Global
 
-| Key | Action |
-|-----|--------|
-| `q` / `Ctrl+C` | Quit |
-| `1`-`4` | Switch to tab by number |
-| `Tab` | Next tab |
-| `Shift+Tab` | Previous tab |
-| `?` | Help |
+| Key            | Action                  |
+| -------------- | ----------------------- |
+| `q` / `Ctrl+C` | Quit                    |
+| `1`-`4`        | Switch to tab by number |
+| `Tab`          | Next tab                |
+| `Shift+Tab`    | Previous tab            |
+| `?`            | Help                    |
 
 ### Navigation
 
-| Key | Action |
-|-----|--------|
-| `j` / `Down` | Move down |
-| `k` / `Up` | Move up |
+| Key                  | Action                             |
+| -------------------- | ---------------------------------- |
+| `j` / `Down`         | Move down                          |
+| `k` / `Up`           | Move up                            |
 | `Ctrl+W W` / `Alt+W` | Toggle pane focus (sidebar ↔ logs) |
-| `Enter` | Select item / move focus to logs |
-| `Esc` | Back / cancel |
-| `gg` | Go to top |
-| `G` | Go to bottom (auto-follow) |
+| `Enter`              | Select item / move focus to logs   |
+| `Esc`                | Back / cancel                      |
+| `gg`                 | Go to top                          |
+| `G`                  | Go to bottom (auto-follow)         |
 
 ### Log View
 
-| Key | Action |
-|-----|--------|
-| `/` | Search logs |
+| Key | Action                                                         |
+| --- | -------------------------------------------------------------- |
+| `/` | Search logs                                                    |
 | `f` | Cycle log level filter (ALL → ERROR+ → WARN+ → INFO+ → DEBUG+) |
-| `w` | Toggle line wrapping |
-| `y` | Yank current line to clipboard (OSC52) |
-| `Y` | Yank all filtered lines to clipboard |
-| `e` | Export filtered logs to text file (`/tmp/`) |
-| `E` | Export filtered logs to JSON file |
-| `o` | Open filtered logs in `$EDITOR` at cursor line |
+| `w` | Toggle line wrapping                                           |
+| `y` | Yank current line to clipboard (OSC52)                         |
+| `Y` | Yank all filtered lines to clipboard                           |
+| `e` | Export filtered logs to text file (`/tmp/`)                    |
+| `E` | Export filtered logs to JSON file                              |
+| `o` | Open filtered logs in `$EDITOR` at cursor line                 |
 
 ### Actions
 
-| Key | Action |
-|-----|--------|
-| `r` | Restart container/pod |
-| `s` | Stop container/pod |
+| Key | Action                     |
+| --- | -------------------------- |
+| `r` | Restart container/pod      |
+| `s` | Stop container/pod         |
 | `d` | Delete (with confirmation) |
-| `D` | Describe / inspect |
-| `x` | Exec shell |
-| `p` | Port forward |
-| `S` | Scale deployment |
+| `D` | Describe / inspect         |
+| `x` | Exec shell                 |
+| `p` | Port forward               |
+| `S` | Scale deployment           |
 
 ## UI Layout
 
@@ -126,18 +126,18 @@ Config file: `~/.config/lazydev/config.yaml`
 
 ```yaml
 docker:
-  host: ""                    # auto-detect if empty
-  compose_detection: true     # group by docker-compose project
+  host: "" # auto-detect if empty
+  compose_detection: true # group by docker-compose project
 
 kubernetes:
-  kubeconfig: ""              # auto-detect if empty
-  context: ""                 # use current context if empty
-  namespaces: []              # watch all if empty
+  kubeconfig: "" # auto-detect if empty
+  context: "" # use current context if empty
+  namespaces: [] # watch all if empty
 
 ui:
   theme: dark
-  sidebar_width: 15           # percentage of terminal width
-  log_buffer_size: 10000      # lines per source
+  sidebar_width: 15 # percentage of terminal width
+  log_buffer_size: 10000 # lines per source
   timestamps: true
   wrap_lines: false
   refresh_interval_s: 5

@@ -65,6 +65,7 @@ go build ./... # Build all packages (check compilation)
 ## Current Status
 
 All 7 phases complete, plus UX polish:
+
 - Phase 1: Docker tab with live log tailing, sidebar, search, container actions
 - Phase 2: Collapsible groups, confirmation modal, inspect detail pane
 - Phase 3: Kubernetes tab with pod management, describe, YAML

@@ -16,17 +16,18 @@ The key insight from researching tools like Cursor Debug Mode, K8sGPT, Datadog W
 
 **What to build**: `lazydev mcp` starts an MCP server exposing these tools:
 
-| MCP Tool | Description |
-|----------|-------------|
-| `list_resources` | List all Docker containers + K8s pods with status |
-| `get_logs` | Get logs from a specific container/pod (with tail, level filter, time range, regex) |
-| `search_logs` | Search across ALL containers/pods for a pattern (returns matches with service context) |
-| `get_errors` | Get all ERROR/FATAL lines across all services in time order |
-| `describe_resource` | Get container inspect or pod describe output |
-| `get_events` | Get K8s events for a namespace or pod |
-| `get_stats` | Get CPU/memory stats for containers/pods |
+| MCP Tool            | Description                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `list_resources`    | List all Docker containers + K8s pods with status                                      |
+| `get_logs`          | Get logs from a specific container/pod (with tail, level filter, time range, regex)    |
+| `search_logs`       | Search across ALL containers/pods for a pattern (returns matches with service context) |
+| `get_errors`        | Get all ERROR/FATAL lines across all services in time order                            |
+| `describe_resource` | Get container inspect or pod describe output                                           |
+| `get_events`        | Get K8s events for a namespace or pod                                                  |
+| `get_stats`         | Get CPU/memory stats for containers/pods                                               |
 
 **How Claude Code would use it**:
+
 ```
 Human: "The API is returning 500 errors, debug it"
 Claude Code: [calls list_resources] → sees 12 services
@@ -37,6 +38,7 @@ Claude Code: "The postgres container was OOM killed, causing API 500s. Let me ch
 ```
 
 **Files to create**:
+
 - `cmd/lazydev/mcp.go` — MCP server entry point (flag: `lazydev mcp`)
 - `internal/mcp/server.go` — MCP server implementation using stdio transport
 - `internal/mcp/tools.go` — Tool definitions and handlers
@@ -48,6 +50,7 @@ Claude Code: "The postgres container was OOM killed, causing API 500s. Let me ch
 **Why**: LLMs work best with structured text. A CLI mode that outputs JSON enables piping logs directly into LLM context. Also useful for scripting and CI/CD.
 
 **Commands**:
+
 ```bash
 lazydev logs api-server --tail=100 --level=error --json
 lazydev logs --all --errors --last=5m --json
@@ -58,11 +61,20 @@ lazydev events --namespace=default --json
 ```
 
 **JSON output format** (for logs):
+
 ```json
-{"timestamp":"2026-03-30T10:15:32Z","source":"docker","container":"api-server","level":"ERROR","text":"connection refused to postgres:5432","group":"my-app"}
+{
+  "timestamp": "2026-03-30T10:15:32Z",
+  "source": "docker",
+  "container": "api-server",
+  "level": "ERROR",
+  "text": "connection refused to postgres:5432",
+  "group": "my-app"
+}
 ```
 
 **Files to create**:
+
 - `cmd/lazydev/cli.go` — CLI subcommands (using cobra or just flag parsing)
 - `internal/output/json.go` — JSON formatters for all resource types
 
@@ -73,12 +85,14 @@ lazydev events --namespace=default --json
 **Why**: The human needs a way to get log text OUT of the TUI and into Claude Code's context. Currently there's no way to copy/export.
 
 **Features**:
+
 - `y` — yank current log line to clipboard (using OSC52 escape sequence for terminal clipboard)
 - `Y` — yank all visible/filtered lines to clipboard
 - `e` — export current log view to file (`/tmp/lazydev-export-{timestamp}.log`)
 - `E` — export as structured JSON
 
 **Files to modify**:
+
 - `internal/ui/components/logview.go` — add yank/export key handlers
 - `internal/export/clipboard.go` — OSC52 clipboard support
 - `internal/export/file.go` — file export
@@ -90,6 +104,7 @@ lazydev events --namespace=default --json
 **Why**: Most modern services output structured JSON logs. Currently lazydev displays them as raw strings. Parsing JSON would enable field-based filtering and much better readability.
 
 **Features**:
+
 - Auto-detect JSON log lines (starts with `{`)
 - Parse and display as formatted key-value pairs with syntax highlighting
 - Toggle between raw and parsed view (`J` key)
@@ -97,6 +112,7 @@ lazydev events --namespace=default --json
 - Extract common fields: timestamp, level, message, request_id, trace_id
 
 **Files to modify**:
+
 - `internal/log/highlight.go` — add JSON detection and parsing
 - `internal/ui/components/logview.go` — add formatted JSON rendering mode
 
@@ -107,11 +123,13 @@ lazydev events --namespace=default --json
 **Why**: Distributed system debugging requires tracing a request across services. If logs contain a shared ID (trace_id, request_id, correlation_id), we can filter all containers by that ID.
 
 **Features**:
+
 - `c` on a log line — extract IDs (trace_id, request_id, correlation_id patterns), search all containers for that ID
 - Correlation view — shows matching log lines across all services in time order
 - Auto-detect common ID patterns: UUID-like strings, `trace_id=X`, `X-Request-Id`, OpenTelemetry trace IDs
 
 **Files to create**:
+
 - `internal/log/correlate.go` — ID extraction and cross-service search
 - `internal/ui/tabs/correlate.go` — correlation result view
 
@@ -122,6 +140,7 @@ lazydev events --namespace=default --json
 **Why**: When debugging, you often want "show me all errors across everything in the last 10 minutes." This is the All Logs tab but smarter.
 
 **Features**:
+
 - New "Errors" tab or mode within All Logs
 - Pre-filtered to ERROR/FATAL/WARN across all sources
 - Color-coded by service
@@ -136,6 +155,7 @@ lazydev events --namespace=default --json
 **Why**: During debugging, you find interesting log lines and want to save them for later or share with an LLM. Bookmarks create a "trail" of investigation.
 
 **Features**:
+
 - `m` — bookmark current log line (toggle)
 - `'` — jump between bookmarks
 - `B` — view all bookmarks with context (3 lines before/after)
@@ -148,6 +168,7 @@ lazydev events --namespace=default --json
 **Why**: Direct LLM integration for log summarization. "What happened in the last 5 minutes?" Send log context to an LLM API and display the summary.
 
 **Features**:
+
 - `:summarize` command in command palette
 - Sends recent logs (filtered) to configured LLM API
 - Displays summary in detail pane

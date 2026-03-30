@@ -33,7 +33,7 @@ func (t *LogsTab) SetSize(width, height int) {
 	t.width = width
 	t.height = height
 	t.logView.SetSize(width, height)
-	t.logView.SetOffset(0, 2) // tab bar height
+	t.logView.SetOffset(0, 2)  // tab bar height
 	t.logView.SetFocused(true) // always focused in this tab
 }
 
