@@ -18,6 +18,7 @@ tidy:
 fmt:
 	gofmt -s -w .
 	goimports -w .
+	npx prettier --write "**/*.md" 2>/dev/null || true
 
 lint:
 	golangci-lint run ./...
