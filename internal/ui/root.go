@@ -134,8 +134,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusBar.Context = ctx
 	}
 
-	// Broadcast LogBatchMsg to all tabs (so All Logs tab receives everything).
-	if _, ok := msg.(messages.LogBatchMsg); ok {
+	// Broadcast data messages to all tabs so each tab receives its own async results.
+	// This is needed because Init() fires Cmds for all tabs, but Update() normally
+	// only routes to the active tab.
+	switch msg.(type) {
+	case messages.LogBatchMsg, messages.ContainerListMsg, messages.ResourceStatsMsg,
+		messages.ContainerActionMsg, messages.ContainerInspectMsg,
+		messages.LogStreamErrorMsg, messages.ExecFinishedMsg, messages.ScaleMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
 			var cmd tea.Cmd
