@@ -1,12 +1,21 @@
 package components
 
 import (
+	"os/exec"
+	"regexp"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 )
+
+// urlPattern matches http/https URLs in plain text (after ANSI stripping).
+var urlPattern = regexp.MustCompile(`https?://[^\s)\]>]+`)
+
+// ansiPattern matches ANSI escape sequences including OSC 8 hyperlinks.
+// OSC sequences: \x1b]...(\x07|\x1b\\), CSI sequences: \x1b[...letter
+var ansiPattern = regexp.MustCompile(`\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-9;]*[a-zA-Z]`)
 
 // DetailPane displays formatted text (JSON inspect, YAML, describe output).
 type DetailPane struct {
@@ -98,6 +107,22 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case tea.MouseClickMsg:
+		// Ctrl+click opens URL in browser.
+		mouse := msg.Mouse()
+		if !mouse.Mod.Contains(tea.ModCtrl) {
+			return nil
+		}
+		y := mouse.Y
+		if d.title != "" {
+			y--
+		}
+		lineIdx := d.offset + y
+		if lineIdx >= 0 && lineIdx < len(d.lines) {
+			plain := ansiPattern.ReplaceAllString(d.lines[lineIdx], "")
+			if url := urlPattern.FindString(plain); url != "" {
+				_ = exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
+			}
+		}
 		return nil
 	}
 
