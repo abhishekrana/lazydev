@@ -3,7 +3,9 @@ package gitlab
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"gopkg.in/yaml.v3"
@@ -20,8 +22,12 @@ type Client struct {
 // NewClient creates a GitLab client with token discovery.
 // Discovery order: explicit token → GITLAB_TOKEN env → glab CLI config.
 func NewClient(url, token, project string) (*Client, error) {
+	// Auto-detect project from git remote if not set.
 	if project == "" {
-		return nil, fmt.Errorf("gitlab project path is required")
+		project = detectProjectFromGitRemote(url)
+	}
+	if project == "" {
+		return nil, fmt.Errorf("gitlab project not found (set gitlab.project in config or run from a git repo with a GitLab remote)")
 	}
 
 	// Discover URL and token.
@@ -117,6 +123,53 @@ func readGlabConfig() (string, string) {
 
 	url := fmt.Sprintf("%s://%s", protocol, apiHost)
 	return url, hostCfg.Token
+}
+
+// detectProjectFromGitRemote extracts the GitLab project path from the current
+// git repo's remote URL. Supports both SSH and HTTPS formats:
+//   - git@gitlab.com:group/project.git → group/project
+//   - https://gitlab.com/group/project.git → group/project
+func detectProjectFromGitRemote(gitlabURL string) string {
+	out, err := exec.Command("git", "remote", "get-url", "origin").Output() //nolint:gosec // well-known command
+	if err != nil {
+		return ""
+	}
+	remote := strings.TrimSpace(string(out))
+	if remote == "" {
+		return ""
+	}
+
+	// Determine which host to match against.
+	host := "gitlab.com"
+	if gitlabURL != "" {
+		// Extract host from URL like "https://gitlab.example.com"
+		h := strings.TrimPrefix(gitlabURL, "https://")
+		h = strings.TrimPrefix(h, "http://")
+		h = strings.Split(h, "/")[0]
+		if h != "" {
+			host = h
+		}
+	}
+
+	// SSH format: git@gitlab.com:group/project.git
+	if strings.HasPrefix(remote, "git@"+host+":") {
+		path := strings.TrimPrefix(remote, "git@"+host+":")
+		path = strings.TrimSuffix(path, ".git")
+		return path
+	}
+
+	// HTTPS format: https://gitlab.com/group/project.git
+	if strings.Contains(remote, host) {
+		idx := strings.Index(remote, host)
+		path := remote[idx+len(host):]
+		path = strings.TrimPrefix(path, "/")
+		path = strings.TrimSuffix(path, ".git")
+		if path != "" {
+			return path
+		}
+	}
+
+	return ""
 }
 
 func glabConfigPath() string {
