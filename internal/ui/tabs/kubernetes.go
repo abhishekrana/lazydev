@@ -207,7 +207,7 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		s := msg.String()
 		if t.pendingCtrlW {
 			t.pendingCtrlW = false
-			if s == "w" || s == "W" || s == "ctrl+w" || s == "ctrl+W" {
+			if s == "w" || s == "W" || s == "ctrl+w" || s == "ctrl+W" { //nolint:goconst // key names
 				t.toggleFocus()
 				return t, nil
 			}

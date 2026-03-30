@@ -103,6 +103,7 @@ func (h HelpOverlay) View() string {
 				{"Y", "Yank all filtered lines to clipboard"},
 				{"e", "Export filtered logs to text file"},
 				{"E", "Export filtered logs to JSON file"},
+				{"o", "Open logs in $EDITOR (vim)"},
 			},
 		},
 		{

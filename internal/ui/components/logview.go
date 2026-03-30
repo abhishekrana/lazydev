@@ -2,6 +2,8 @@ package components
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -28,6 +30,7 @@ type LogView struct {
 	levelFilter messages.LogLevel // LogLevelUnknown = show all
 	pendingG    bool
 	wrapLines   bool
+	cursor      int // current line index in filtered lines
 }
 
 // NewLogView creates a new log viewport.
@@ -86,6 +89,7 @@ func (l *LogView) Clear() {
 func (l *LogView) scrollToBottom() {
 	filtered := l.visibleLines()
 	viewable := l.viewableHeight()
+	l.cursor = max(0, len(filtered)-1)
 	if len(filtered) > viewable {
 		l.offset = len(filtered) - viewable
 	} else {
@@ -124,19 +128,24 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 		switch {
 		case key.Matches(msg, theme.Keys.Up):
 			l.autoScroll = false
-			if l.offset > 0 {
-				l.offset--
+			if l.cursor > 0 {
+				l.cursor--
+			}
+			// Scroll viewport to keep cursor visible.
+			if l.cursor < l.offset {
+				l.offset = l.cursor
 			}
 		case key.Matches(msg, theme.Keys.Down):
 			filtered := l.visibleLines()
-			maxOffset := len(filtered) - l.viewableHeight()
-			if maxOffset < 0 {
-				maxOffset = 0
+			if l.cursor < len(filtered)-1 {
+				l.cursor++
 			}
-			if l.offset < maxOffset {
-				l.offset++
+			// Scroll viewport to keep cursor visible.
+			viewable := l.viewableHeight()
+			if l.cursor >= l.offset+viewable {
+				l.offset = l.cursor - viewable + 1
 			}
-			if l.offset >= maxOffset {
+			if l.cursor >= len(filtered)-1 {
 				l.autoScroll = true
 			}
 		case key.Matches(msg, theme.Keys.Search):
@@ -157,22 +166,24 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 		case msg.String() == "G":
 			l.pendingG = false
 			l.autoScroll = true
+			filtered := l.visibleLines()
+			l.cursor = max(0, len(filtered)-1)
 			l.scrollToBottom()
 		case msg.String() == "g":
 			if l.pendingG {
 				l.autoScroll = false
 				l.offset = 0
+				l.cursor = 0
 				l.pendingG = false
 			} else {
 				l.pendingG = true
 			}
 		case msg.String() == "y":
-			// Yank current log line to clipboard.
+			// Yank cursor line to clipboard.
 			l.pendingG = false
 			filtered := l.visibleLines()
-			idx := l.offset
-			if idx >= 0 && idx < len(filtered) {
-				text := export.LinesToText(filtered[idx : idx+1])
+			if l.cursor >= 0 && l.cursor < len(filtered) {
+				text := export.LinesToText(filtered[l.cursor : l.cursor+1])
 				return tea.Printf("%s", export.ToClipboardOSC52(text))
 			}
 		case msg.String() == "Y":
@@ -191,6 +202,10 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 			// Export visible logs to JSON file.
 			l.pendingG = false
 			return l.exportToFile(true)
+		case msg.String() == "o":
+			// Open filtered logs in $EDITOR.
+			l.pendingG = false
+			return l.openInEditor()
 		default:
 			l.pendingG = false
 		}
@@ -219,6 +234,34 @@ func (l *LogView) exportToFile(asJSON bool) tea.Cmd {
 		path, err := export.ToFile(label, content, ext)
 		return messages.LogExportedMsg{Path: path, Err: err}
 	}
+}
+
+func (l *LogView) openInEditor() tea.Cmd {
+	filtered := l.visibleLines()
+	label := l.sourceLabel
+	if label == "" {
+		label = "all-logs"
+	}
+
+	content := export.LinesToText(filtered)
+	path, err := export.ToFile(label, content, ".log")
+	if err != nil {
+		return func() tea.Msg {
+			return messages.LogExportedMsg{Err: err}
+		}
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim"
+	}
+
+	// Open at cursor line position.
+	lineArg := fmt.Sprintf("+%d", l.cursor+1)
+	c := exec.Command(editor, lineArg, path) //nolint:gosec,noctx // intentional editor open, ExecProcess manages lifecycle
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return messages.ExecFinishedMsg{Err: err}
+	})
 }
 
 func (l *LogView) cycleFilter() {
@@ -289,11 +332,15 @@ func (l LogView) View() string {
 		end = len(filtered)
 	}
 
+	cursorStyle := theme.SidebarSelectedStyle
+
 	lineCount := 0
 	for i := start; i < end && lineCount < viewable; i++ {
+		isCursor := (i == l.cursor) && l.focused
+
 		if l.wrapLines && l.width > 0 {
-			// Wrap mode: split raw text into pane-width chunks.
 			raw := l.rawLine(filtered[i])
+			firstChunk := true
 			for len(raw) > 0 && lineCount < viewable {
 				chunk := raw
 				if len(chunk) > l.width {
@@ -302,15 +349,23 @@ func (l LogView) View() string {
 				} else {
 					raw = ""
 				}
-				styled := l.styleText(chunk, filtered[i].Level)
-				b.WriteString(styled)
+				if isCursor && firstChunk {
+					b.WriteString(cursorStyle.Width(l.width).Render(chunk))
+					firstChunk = false
+				} else {
+					styled := l.styleText(chunk, filtered[i].Level)
+					b.WriteString(styled)
+				}
 				b.WriteString("\n")
 				lineCount++
 			}
 		} else {
-			// No-wrap mode: truncate to pane width.
 			rendered := l.renderLine(filtered[i])
-			b.WriteString(rendered)
+			if isCursor {
+				b.WriteString(cursorStyle.Width(l.width).Render(l.rawLineTruncated(filtered[i])))
+			} else {
+				b.WriteString(rendered)
+			}
 			b.WriteString("\n")
 			lineCount++
 		}
@@ -382,6 +437,15 @@ func levelFilterName(level messages.LogLevel) string {
 	default:
 		return "ALL"
 	}
+}
+
+// rawLineTruncated returns unstyled text truncated to pane width (for cursor highlight).
+func (l LogView) rawLineTruncated(line messages.LogLine) string {
+	raw := l.rawLine(line)
+	if l.width > 0 && len(raw) > l.width {
+		return raw[:l.width]
+	}
+	return raw
 }
 
 // rawLine returns the unstyled text for a log line (for wrapping).
