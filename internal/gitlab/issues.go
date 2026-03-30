@@ -12,41 +12,42 @@ import (
 
 // ListMyIssues returns issues assigned to, created by, or mentioning the authenticated user.
 func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabIssue, err error) {
-	seen := make(map[int64]bool)
+	seenAssigned := make(map[int64]bool)
+	seenCreated := make(map[int64]bool)
 
 	// Fetch assigned issues for all tracked users.
 	for _, uid := range c.UserIDs {
 		opts := &gitlab.ListProjectIssuesOptions{
-			State:      gitlab.Ptr("opened"),
+			State:       gitlab.Ptr("opened"),
 			ListOptions: gitlab.ListOptions{PerPage: 50},
-			AssigneeID: gitlab.AssigneeID(uid),
+			AssigneeID:  gitlab.AssigneeID(uid),
 		}
 		raw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
 		if err != nil {
 			continue
 		}
 		for _, issue := range convertIssues(raw) {
-			if !seen[issue.IID] {
-				seen[issue.IID] = true
+			if !seenAssigned[issue.IID] {
+				seenAssigned[issue.IID] = true
 				assigned = append(assigned, issue)
 			}
 		}
 	}
 
-	// Fetch created issues for all tracked users.
+	// Fetch created issues for all tracked users (skip if already in assigned).
 	for _, uid := range c.UserIDs {
 		opts := &gitlab.ListProjectIssuesOptions{
-			State:      gitlab.Ptr("opened"),
+			State:       gitlab.Ptr("opened"),
 			ListOptions: gitlab.ListOptions{PerPage: 50},
-			AuthorID:   gitlab.Ptr(uid),
+			AuthorID:    gitlab.Ptr(uid),
 		}
 		raw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
 		if err != nil {
 			continue
 		}
 		for _, issue := range convertIssues(raw) {
-			if !seen[issue.IID] {
-				seen[issue.IID] = true
+			if !seenAssigned[issue.IID] && !seenCreated[issue.IID] {
+				seenCreated[issue.IID] = true
 				created = append(created, issue)
 			}
 		}
