@@ -165,6 +165,14 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, t.fetchPods()
 
+	case messages.LogExportedMsg:
+		if msg.Err == nil {
+			t.setNotification(fmt.Sprintf("exported to %s", msg.Path))
+		} else {
+			t.setNotification(fmt.Sprintf("export failed: %v", msg.Err))
+		}
+		return t, nil
+
 	case kubeRefreshTickMsg:
 		return t, tea.Batch(t.fetchPods(), t.tickRefresh())
 

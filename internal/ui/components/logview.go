@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/abhishek-rana/lazydk/internal/export"
 	"github.com/abhishek-rana/lazydk/internal/ui/theme"
 	"github.com/abhishek-rana/lazydk/pkg/messages"
 )
@@ -158,12 +159,59 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 			} else {
 				l.pendingG = true
 			}
+		case msg.String() == "y":
+			// Yank current log line to clipboard.
+			l.pendingG = false
+			filtered := l.visibleLines()
+			idx := l.offset
+			if idx >= 0 && idx < len(filtered) {
+				text := export.LinesToText(filtered[idx : idx+1])
+				return tea.Printf("%s", export.ToClipboardOSC52(text))
+			}
+		case msg.String() == "Y":
+			// Yank all visible/filtered lines to clipboard.
+			l.pendingG = false
+			filtered := l.visibleLines()
+			if len(filtered) > 0 {
+				text := export.LinesToText(filtered)
+				return tea.Printf("%s", export.ToClipboardOSC52(text))
+			}
+		case msg.String() == "e":
+			// Export visible logs to text file.
+			l.pendingG = false
+			return l.exportToFile(false)
+		case msg.String() == "E":
+			// Export visible logs to JSON file.
+			l.pendingG = false
+			return l.exportToFile(true)
 		default:
 			l.pendingG = false
 		}
 	}
 
 	return nil
+}
+
+func (l *LogView) exportToFile(asJSON bool) tea.Cmd {
+	filtered := l.visibleLines()
+	label := l.sourceLabel
+	if label == "" {
+		label = "all-logs"
+	}
+
+	return func() tea.Msg {
+		var content, ext string
+		if asJSON {
+			content = export.LinesToJSON(filtered)
+			ext = ".json"
+		} else {
+			content = export.LinesToText(filtered)
+			ext = ".log"
+		}
+
+		path, err := export.ToFile(label, content, ext)
+		return messages.LogExportedMsg{Path: path, Err: err}
+	}
 }
 
 func (l *LogView) cycleFilter() {

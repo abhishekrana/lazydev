@@ -98,6 +98,10 @@ func (h HelpOverlay) View() string {
 			keys: [][2]string{
 				{"/", "Search logs"},
 				{"f", "Cycle log level filter"},
+				{"y", "Yank current line to clipboard"},
+				{"Y", "Yank all filtered lines to clipboard"},
+				{"e", "Export filtered logs to text file"},
+				{"E", "Export filtered logs to JSON file"},
 			},
 		},
 		{

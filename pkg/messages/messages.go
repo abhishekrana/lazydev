@@ -146,6 +146,18 @@ type ScaleMsg struct {
 	Err      error
 }
 
+// LogExportedMsg is sent when logs are exported to a file.
+type LogExportedMsg struct {
+	Path string
+	Err  error
+}
+
+// ClipboardMsg is sent when content is copied to clipboard.
+type ClipboardMsg struct {
+	Lines int
+	Err   error
+}
+
 // DiscoveryResultMsg reports which backends are available.
 type DiscoveryResultMsg struct {
 	DockerAvailable bool
