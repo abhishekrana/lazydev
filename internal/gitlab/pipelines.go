@@ -12,24 +12,33 @@ import (
 
 // ListMyPipelines returns pipelines triggered by the authenticated user and all recent pipelines.
 func (c *Client) ListMyPipelines() (mine, all []messages.GitLabPipeline, err error) {
-	// My pipelines.
-	opts := &gitlab.ListProjectPipelinesOptions{
-		ListOptions: gitlab.ListOptions{PerPage: 30},
-		Username:    gitlab.Ptr(c.Username),
+	seen := make(map[int64]bool)
+
+	// My pipelines (from all tracked users).
+	for _, username := range c.Usernames {
+		opts := &gitlab.ListProjectPipelinesOptions{
+			ListOptions: gitlab.ListOptions{PerPage: 30},
+			Username:    gitlab.Ptr(username),
+		}
+		raw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, opts)
+		if err != nil {
+			continue
+		}
+		for _, p := range convertPipelines(raw) {
+			if !seen[p.ID] {
+				seen[p.ID] = true
+				mine = append(mine, p)
+			}
+		}
 	}
-	mineRaw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("listing my pipelines: %w", err)
-	}
-	mine = convertPipelines(mineRaw)
 
 	// All pipelines.
-	opts.Username = nil
-	allRaw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, opts)
-	if err != nil {
-		return mine, nil, fmt.Errorf("listing all pipelines: %w", err)
+	allRaw, _, err := c.Raw.Pipelines.ListProjectPipelines(c.ProjectID, &gitlab.ListProjectPipelinesOptions{
+		ListOptions: gitlab.ListOptions{PerPage: 30},
+	})
+	if err == nil {
+		all = convertPipelines(allRaw)
 	}
-	all = convertPipelines(allRaw)
 
 	return mine, all, nil
 }

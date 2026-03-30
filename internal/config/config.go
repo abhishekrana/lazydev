@@ -17,10 +17,11 @@ type Config struct {
 
 // GitLabConfig holds GitLab-specific settings.
 type GitLabConfig struct {
-	URL              string `yaml:"url"`
-	Token            string `yaml:"token"`
-	Project          string `yaml:"project"`
-	RefreshIntervalS int    `yaml:"refresh_interval_s"`
+	URL              string   `yaml:"url"`
+	Token            string   `yaml:"token"`
+	Project          string   `yaml:"project"`
+	AdditionalUsers  []string `yaml:"additional_users"`
+	RefreshIntervalS int      `yaml:"refresh_interval_s"`
 }
 
 // DockerConfig holds Docker-specific settings.

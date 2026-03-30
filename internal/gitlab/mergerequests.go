@@ -11,36 +11,54 @@ import (
 
 // ListMyMRs returns merge requests authored by, reviewing, or all open.
 func (c *Client) ListMyMRs() (mine, reviewRequested, allOpen []messages.GitLabMR, err error) {
-	// My MRs (authored by me).
-	opts := &gitlab.ListProjectMergeRequestsOptions{
-		State: gitlab.Ptr("opened"),
-		ListOptions: gitlab.ListOptions{
-			PerPage: 50,
-		},
-		AuthorID: gitlab.Ptr(c.UserID),
-	}
-	mineRaw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("listing my MRs: %w", err)
-	}
-	mine = convertMRs(mineRaw)
+	seen := make(map[int64]bool)
 
-	// Review requested.
-	opts.AuthorID = nil
-	opts.ReviewerID = gitlab.ReviewerID(c.UserID)
-	reviewRaw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
-	if err != nil {
-		return mine, nil, nil, fmt.Errorf("listing review MRs: %w", err)
+	// My MRs (authored by any tracked user).
+	for _, uid := range c.UserIDs {
+		opts := &gitlab.ListProjectMergeRequestsOptions{
+			State:       gitlab.Ptr("opened"),
+			ListOptions: gitlab.ListOptions{PerPage: 50},
+			AuthorID:    gitlab.Ptr(uid),
+		}
+		raw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
+		if err != nil {
+			continue
+		}
+		for _, mr := range convertMRs(raw) {
+			if !seen[mr.IID] {
+				seen[mr.IID] = true
+				mine = append(mine, mr)
+			}
+		}
 	}
-	reviewRequested = convertMRs(reviewRaw)
+
+	// Review requested (for any tracked user).
+	for _, uid := range c.UserIDs {
+		opts := &gitlab.ListProjectMergeRequestsOptions{
+			State:       gitlab.Ptr("opened"),
+			ListOptions: gitlab.ListOptions{PerPage: 50},
+			ReviewerID:  gitlab.ReviewerID(uid),
+		}
+		raw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
+		if err != nil {
+			continue
+		}
+		for _, mr := range convertMRs(raw) {
+			if !seen[mr.IID] {
+				seen[mr.IID] = true
+				reviewRequested = append(reviewRequested, mr)
+			}
+		}
+	}
 
 	// All open.
-	opts.ReviewerID = nil
-	allRaw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
-	if err != nil {
-		return mine, reviewRequested, nil, fmt.Errorf("listing all MRs: %w", err)
+	allRaw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, &gitlab.ListProjectMergeRequestsOptions{
+		State:       gitlab.Ptr("opened"),
+		ListOptions: gitlab.ListOptions{PerPage: 50},
+	})
+	if err == nil {
+		allOpen = convertMRs(allRaw)
 	}
-	allOpen = convertMRs(allRaw)
 
 	return mine, reviewRequested, allOpen, nil
 }

@@ -13,15 +13,18 @@ import (
 
 // Client wraps the GitLab API client.
 type Client struct {
-	Raw       *gitlab.Client
-	ProjectID string // project path e.g. "mygroup/myproject"
-	UserID    int64  // authenticated user's ID
-	Username  string // authenticated user's username
+	Raw        *gitlab.Client
+	ProjectID  string  // project path e.g. "mygroup/myproject"
+	UserID     int64   // authenticated user's ID
+	Username   string  // authenticated user's username
+	UserIDs    []int64 // all user IDs to track (self + additional users like bots)
+	Usernames  []string // all usernames to track
 }
 
 // NewClient creates a GitLab client with token discovery.
 // Discovery order: explicit token → GITLAB_TOKEN env → glab CLI config.
-func NewClient(url, token, project string) (*Client, error) {
+// additionalUsers are extra usernames (e.g. bot accounts) to include in "my" queries.
+func NewClient(url, token, project string, additionalUsers []string) (*Client, error) {
 	// Auto-detect project from git remote if not set.
 	if project == "" {
 		project = detectProjectFromGitRemote(url)
@@ -73,6 +76,19 @@ func NewClient(url, token, project string) (*Client, error) {
 	}
 	c.UserID = user.ID
 	c.Username = user.Username
+	c.UserIDs = []int64{user.ID}
+	c.Usernames = []string{user.Username}
+
+	// Resolve additional users (e.g. bot accounts).
+	for _, username := range additionalUsers {
+		users, _, err := raw.Users.ListUsers(&gitlab.ListUsersOptions{
+			Username: gitlab.Ptr(username),
+		})
+		if err == nil && len(users) > 0 {
+			c.UserIDs = append(c.UserIDs, users[0].ID)
+			c.Usernames = append(c.Usernames, users[0].Username)
+		}
+	}
 
 	return c, nil
 }

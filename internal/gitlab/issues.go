@@ -12,41 +12,47 @@ import (
 
 // ListMyIssues returns issues assigned to, created by, or mentioning the authenticated user.
 func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabIssue, err error) {
-	opts := &gitlab.ListProjectIssuesOptions{
-		State: gitlab.Ptr("opened"),
-		ListOptions: gitlab.ListOptions{
-			PerPage: 50,
-		},
-		AssigneeID: gitlab.AssigneeID(c.UserID),
-	}
-	assignedRaw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("listing assigned issues: %w", err)
-	}
-	assigned = convertIssues(assignedRaw)
+	seen := make(map[int64]bool)
 
-	opts.AssigneeID = nil
-	opts.AuthorID = gitlab.Ptr(c.UserID)
-	createdRaw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
-	if err != nil {
-		return assigned, nil, nil, fmt.Errorf("listing created issues: %w", err)
+	// Fetch assigned issues for all tracked users.
+	for _, uid := range c.UserIDs {
+		opts := &gitlab.ListProjectIssuesOptions{
+			State:      gitlab.Ptr("opened"),
+			ListOptions: gitlab.ListOptions{PerPage: 50},
+			AssigneeID: gitlab.AssigneeID(uid),
+		}
+		raw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
+		if err != nil {
+			continue
+		}
+		for _, issue := range convertIssues(raw) {
+			if !seen[issue.IID] {
+				seen[issue.IID] = true
+				assigned = append(assigned, issue)
+			}
+		}
 	}
-	created = convertIssues(createdRaw)
 
-	// "Mentioned" = issues where user is mentioned but not assigned/author.
-	// GitLab API doesn't have a direct "mentioned" filter, so we skip duplicates.
-	// For now, use the broader scope filter.
-	opts.AuthorID = nil
-	opts.AssigneeID = nil
-	opts.MyReactionEmoji = gitlab.Ptr("Any")
-	mentionedRaw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
-	if err != nil {
-		// Non-critical, don't fail.
-		mentionedRaw = nil
+	// Fetch created issues for all tracked users.
+	for _, uid := range c.UserIDs {
+		opts := &gitlab.ListProjectIssuesOptions{
+			State:      gitlab.Ptr("opened"),
+			ListOptions: gitlab.ListOptions{PerPage: 50},
+			AuthorID:   gitlab.Ptr(uid),
+		}
+		raw, _, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
+		if err != nil {
+			continue
+		}
+		for _, issue := range convertIssues(raw) {
+			if !seen[issue.IID] {
+				seen[issue.IID] = true
+				created = append(created, issue)
+			}
+		}
 	}
-	mentioned = convertIssues(mentionedRaw)
 
-	return assigned, created, mentioned, nil
+	return assigned, created, nil, nil
 }
 
 // GetIssue returns a single issue with its notes.

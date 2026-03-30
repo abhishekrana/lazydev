@@ -45,7 +45,7 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 	}
 
 	// Try GitLab.
-	gc, err := gitlabpkg.NewClient(cfg.GitLab.URL, cfg.GitLab.Token, cfg.GitLab.Project)
+	gc, err := gitlabpkg.NewClient(cfg.GitLab.URL, cfg.GitLab.Token, cfg.GitLab.Project, cfg.GitLab.AdditionalUsers)
 	if err == nil {
 		state.GitLabClient = gc
 	} else {
