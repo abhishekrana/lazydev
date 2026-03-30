@@ -90,6 +90,8 @@ type glabHostConfig struct {
 }
 
 // readGlabConfig reads the glab CLI config file and returns (url, token).
+// glab uses "!!null" YAML tags for tokens which causes Go's YAML parser to
+// error, so we use a combination of YAML parsing and raw text extraction.
 func readGlabConfig() (string, string) {
 	path := glabConfigPath()
 	data, err := os.ReadFile(path) //nolint:gosec // config path is well-known
@@ -97,39 +99,35 @@ func readGlabConfig() (string, string) {
 		return "", ""
 	}
 
+	// Try YAML first for host field (top-level, always parses fine).
 	var cfg glabConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return "", ""
-	}
+	_ = yaml.Unmarshal(data, &cfg) // ignore error — !!null tag breaks full parse
 
 	host := cfg.Host
 	if host == "" {
 		host = "gitlab.com"
 	}
 
+	// Try structured parsing first.
 	hostCfg, ok := cfg.Hosts[host]
-	if !ok {
+	if ok && hostCfg.Token != "" {
+		protocol := hostCfg.APIProtocol
+		if protocol == "" {
+			protocol = "https"
+		}
+		apiHost := hostCfg.APIHost
+		if apiHost == "" {
+			apiHost = host
+		}
+		return fmt.Sprintf("%s://%s", protocol, apiHost), hostCfg.Token
+	}
+
+	// Fall back to raw text extraction (handles !!null YAML tag).
+	token := extractTokenFromRaw(data, host)
+	if token == "" {
 		return "", ""
 	}
-
-	// glab uses "!!null" YAML tag for tokens which Go's YAML parser
-	// treats as empty. Fall back to regex extraction from raw file.
-	token := hostCfg.Token
-	if token == "" {
-		token = extractTokenFromRaw(data, host)
-	}
-
-	protocol := hostCfg.APIProtocol
-	if protocol == "" {
-		protocol = "https"
-	}
-	apiHost := hostCfg.APIHost
-	if apiHost == "" {
-		apiHost = host
-	}
-
-	url := fmt.Sprintf("%s://%s", protocol, apiHost)
-	return url, token
+	return fmt.Sprintf("https://%s", host), token
 }
 
 // extractTokenFromRaw extracts the token from glab config when YAML parsing
