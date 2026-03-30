@@ -159,7 +159,7 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("issue detail: %v", msg.err)
 			return t, nil
 		}
-		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes)
+		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes, msg.relatedMRs)
 		t.detailPane.SetContent(fmt.Sprintf("#%d %s", msg.issue.IID, msg.issue.Title), detail)
 		return t, nil
 
@@ -348,8 +348,8 @@ func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 	seq := t.fetchSeq
 
 	return func() tea.Msg {
-		issue, notes, err := t.client.GetIssue(iid)
-		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, err: err}
+		issue, notes, relatedMRs, err := t.client.GetIssue(iid)
+		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, relatedMRs: relatedMRs, err: err}
 	}
 }
 
@@ -407,10 +407,11 @@ type issueDetailFetchMsg struct {
 
 // issueDetailResultMsg wraps IssueDetailMsg with a sequence number for staleness check.
 type issueDetailResultMsg struct {
-	seq   uint64
-	issue messages.GitLabIssue
-	notes []messages.GitLabNote
-	err   error
+	seq        uint64
+	issue      messages.GitLabIssue
+	notes      []messages.GitLabNote
+	relatedMRs []messages.GitLabIssueMR
+	err        error
 }
 
 func (t *IssuesTab) tickRefresh() tea.Cmd {

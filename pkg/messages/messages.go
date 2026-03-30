@@ -227,6 +227,15 @@ type GitLabJob struct {
 	WebURL   string
 }
 
+// GitLabIssueMR represents a merge request linked to an issue.
+type GitLabIssueMR struct {
+	IID          int64
+	Title        string
+	State        string
+	SourceBranch string
+	WebURL       string
+}
+
 // GitLabNote represents a comment on an issue or MR.
 type GitLabNote struct {
 	Author    string
@@ -253,11 +262,12 @@ type IssueListMsg struct {
 	Err              error
 }
 
-// IssueDetailMsg delivers a single issue with notes.
+// IssueDetailMsg delivers a single issue with notes and related MRs.
 type IssueDetailMsg struct {
-	Issue GitLabIssue
-	Notes []GitLabNote
-	Err   error
+	Issue      GitLabIssue
+	Notes      []GitLabNote
+	RelatedMRs []GitLabIssueMR
+	Err        error
 }
 
 // IssueActionMsg reports the result of an issue action.

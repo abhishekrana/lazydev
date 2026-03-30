@@ -86,34 +86,48 @@ func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabI
 	return assigned, created, nil, currentIter, nil
 }
 
-// GetIssue returns a single issue with its notes.
-func (c *Client) GetIssue(iid int64) (messages.GitLabIssue, []messages.GitLabNote, error) {
+// GetIssue returns a single issue with its notes and related MRs.
+func (c *Client) GetIssue(iid int64) (messages.GitLabIssue, []messages.GitLabNote, []messages.GitLabIssueMR, error) {
 	issue, _, err := c.Raw.Issues.GetIssue(c.ProjectID, iid)
 	if err != nil {
-		return messages.GitLabIssue{}, nil, fmt.Errorf("getting issue: %w", err)
+		return messages.GitLabIssue{}, nil, nil, fmt.Errorf("getting issue: %w", err)
 	}
 
 	notesRaw, _, err := c.Raw.Notes.ListIssueNotes(c.ProjectID, iid, &gitlab.ListIssueNotesOptions{
 		ListOptions: gitlab.ListOptions{PerPage: 50},
 		Sort:        gitlab.Ptr("asc"),
 	})
-	if err != nil {
-		return convertIssue(issue), nil, nil // notes are non-critical
-	}
-
-	notes := make([]messages.GitLabNote, 0, len(notesRaw))
-	for _, n := range notesRaw {
-		if n.System {
-			continue // skip system notes
+	var notes []messages.GitLabNote
+	if err == nil {
+		notes = make([]messages.GitLabNote, 0, len(notesRaw))
+		for _, n := range notesRaw {
+			if n.System {
+				continue
+			}
+			notes = append(notes, messages.GitLabNote{
+				Author:    n.Author.Username,
+				Body:      n.Body,
+				CreatedAt: safeTime(n.CreatedAt),
+			})
 		}
-		notes = append(notes, messages.GitLabNote{
-			Author:    n.Author.Username,
-			Body:      n.Body,
-			CreatedAt: safeTime(n.CreatedAt),
-		})
 	}
 
-	return convertIssue(issue), notes, nil
+	// Fetch related MRs (non-critical).
+	var relatedMRs []messages.GitLabIssueMR
+	mrs, _, mrErr := c.Raw.Issues.ListMergeRequestsRelatedToIssue(c.ProjectID, iid, &gitlab.ListMergeRequestsRelatedToIssueOptions{})
+	if mrErr == nil {
+		for _, mr := range mrs {
+			relatedMRs = append(relatedMRs, messages.GitLabIssueMR{
+				IID:          mr.IID,
+				Title:        mr.Title,
+				State:        mr.State,
+				SourceBranch: mr.SourceBranch,
+				WebURL:       mr.WebURL,
+			})
+		}
+	}
+
+	return convertIssue(issue), notes, relatedMRs, nil
 }
 
 // CloseIssue closes an issue.
@@ -222,8 +236,8 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 	}
 }
 
-// FormatIssueDetail formats an issue and its notes for the detail pane.
-func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote) string {
+// FormatIssueDetail formats an issue, related MRs, and notes for the detail pane.
+func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, relatedMRs []messages.GitLabIssueMR) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "#%d %s [%s]\n", issue.IID, issue.Title, issue.State)
@@ -249,6 +263,21 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote) 
 	fmt.Fprintf(&b, "Created:   %s\n", issue.CreatedAt.Format("2006-01-02 15:04"))
 	fmt.Fprintf(&b, "Updated:   %s\n", issue.UpdatedAt.Format("2006-01-02 15:04"))
 	fmt.Fprintf(&b, "URL:       %s\n", issue.WebURL)
+
+	if len(relatedMRs) > 0 {
+		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
+		b.WriteString("MERGE REQUESTS\n")
+		for _, mr := range relatedMRs {
+			stateIcon := "●"
+			if mr.State == "merged" {
+				stateIcon = "✓"
+			} else if mr.State == "closed" {
+				stateIcon = "✗"
+			}
+			fmt.Fprintf(&b, "  %s !%d %s [%s]\n", stateIcon, mr.IID, mr.Title, mr.State)
+			fmt.Fprintf(&b, "    %s\n", mr.SourceBranch)
+		}
+	}
 
 	if issue.Description != "" {
 		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
