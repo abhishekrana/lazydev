@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**lazydev** is a unified TUI for Docker and Kubernetes — view logs, monitor status, and manage resources in one terminal tool. Built with Go and Bubble Tea v2. Designed for LLM-assisted debugging workflows (export logs to clipboard/file for AI analysis).
+**lazydev** is a unified TUI for Docker, Kubernetes, and GitLab — view logs, monitor status, manage resources, track issues/MRs/pipelines in one terminal tool. Built with Go and Bubble Tea v2. Designed for LLM-assisted debugging workflows.
 
 ## Setup & Build
 
@@ -10,6 +10,7 @@
 ./bootstrap.sh  # Install Taskfile runner
 task init        # Install dev tools (goimports, golangci-lint) and tidy deps
 task build       # Build binary (output: ./lazydev)
+task install     # Install binary to ~/.local/bin
 task run         # Build and run
 task clean       # Remove binary
 task tidy        # go mod tidy
@@ -27,7 +28,8 @@ go build ./...   # Build all packages (check compilation)
 - `internal/ui/theme/styles.go` — Solarized Light palette, all Lip Gloss styles
 - `internal/ui/theme/keys.go` — All keybindings (vim + arrow keys) to avoid import cycles
 - `internal/ui/components/` — Reusable widgets: TabBar, Sidebar, LogView, StatusBar, Modal, InputModal, DetailPane, Table, HelpOverlay, CmdPalette
-- `internal/ui/tabs/` — Tab models: DockerTab, KubeTab, LogsTab, DashboardTab
+- `internal/ui/tabs/` — Tab models: DockerTab, KubeTab, LogsTab, DashboardTab, IssuesTab, MRsTab, PipelinesTab
+- `internal/gitlab/` — GitLab API wrapper: client (auth discovery from config/env/glab CLI), issues, merge requests, pipelines
 - `internal/ui/layout/` — Split pane layout helpers
 - `internal/docker/` — Docker SDK wrapper: client, container list/logs/inspect/stats, actions, compose grouping
 - `internal/kube/` — Kubernetes client-go wrapper: pods, deployments, services, events, describe, scale
@@ -44,7 +46,9 @@ go build ./...   # Build all packages (check compilation)
 - **Log streaming**: Goroutines per source → fan-in channel → batched delivery (50ms/100 lines) → `LogBatchMsg` to Bubble Tea. Ring buffer bounds memory at 10k lines per source. Docker multiplexed stream headers and ANSI escape codes are stripped at the stream level.
 - **Message broadcasting**: Root model broadcasts data messages (LogBatchMsg, ContainerListMsg, ResourceStatsMsg, etc.) to ALL tabs, not just the active tab — ensures background tabs stay current.
 - **TabModel interface**: Defined in `internal/ui/root.go` — `Init()`, `Update()`, `View()`, `Title()`, `SetSize()`. Each tab returns `(ui.TabModel, tea.Cmd)` from Update.
-- **SharedState**: Passed by pointer to tabs. Contains Docker client, K8s client, StreamManager, config. Only backend state is shared; UI state is per-tab.
+- **SharedState**: Passed by pointer to tabs. Contains Docker client, K8s client, GitLab client, StreamManager, config. Only backend state is shared; UI state is per-tab.
+- **GitLab auth discovery**: config → `GITLAB_TOKEN` env → `~/.config/glab-cli/config.yml` (handles `!!null` YAML tag). Project auto-detected from `git remote get-url origin`.
+- **Multi-user tracking**: GitLab tabs query for both the authenticated user and configured `additional_users` (e.g. bot accounts).
 - **Message types**: All in `pkg/messages/` to avoid circular dependencies between UI and backend packages.
 - **Pane switching**: `Ctrl+W W` and `Alt+W` toggle focus between sidebar and log pane (vim-style). `Enter` on sidebar item also moves focus to logs.
 - **Two-key sequences**: `gg` (go to top) and `Ctrl+W w` use pending state flags (e.g., `pendingG`, `pendingCtrlW`).
@@ -75,4 +79,5 @@ All 7 phases complete, plus UX polish:
 - Phase 5: Dashboard tab with sortable table, Docker stats (CPU/mem)
 - Phase 6: Exec shell (x), port-forward (p), scale deployment (S)
 - Phase 7: Help overlay (?), command palette (:), goreleaser config
-- UX polish: Solarized Light theme, vim gg/G navigation, sidebar `/` search, Ctrl+W W pane switching, cursor highlight in log pane, wrap toggle (w), log export (y/Y/e/E/o), Docker header & ANSI stripping, mouse click/scroll support, 1-4 tab selection
+- UX polish: Solarized Light theme, vim gg/G navigation, sidebar `/` search, Ctrl+W W pane switching, cursor highlight in log pane, wrap toggle (w), log export (y/Y/e/E/o), Docker header & ANSI stripping, mouse click/scroll support, 1-9 tab selection
+- GitLab: Issues tab (assigned/created, close/reopen, comment, assign), MRs tab (mine/review-requested, approve, merge, neovim DiffviewOpen review), Pipelines tab (jobs, job logs, retry/cancel)
