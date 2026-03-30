@@ -179,6 +179,8 @@ type GitLabIssue struct {
 	Description        string
 	Labels             []string
 	Milestone          string
+	Iteration          string // iteration title (e.g. "Sprint 5")
+	IterationDates     string // e.g. "Mar 22 – Apr 4, 2026"
 	Author             string
 	Assignee           string
 	WebURL             string
@@ -233,12 +235,21 @@ type GitLabNote struct {
 
 // --- GitLab messages ---
 
+// GitLabIteration represents a GitLab iteration (sprint).
+type GitLabIteration struct {
+	ID    int64
+	Title string
+	Start time.Time
+	Due   time.Time
+}
+
 // IssueListMsg delivers issue lists from GitLab.
 type IssueListMsg struct {
-	Assigned  []GitLabIssue
-	Created   []GitLabIssue
-	Mentioned []GitLabIssue
-	Err       error
+	Assigned         []GitLabIssue
+	Created          []GitLabIssue
+	Mentioned        []GitLabIssue
+	CurrentIteration *GitLabIteration // active iteration, if any
+	Err              error
 }
 
 // IssueDetailMsg delivers a single issue with notes.

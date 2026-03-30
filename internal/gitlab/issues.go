@@ -10,10 +10,40 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// ListMyIssues returns issues assigned to, created by, or mentioning the authenticated user.
-func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabIssue, err error) {
+// GetCurrentIteration returns the currently active iteration for the project, if any.
+func (c *Client) GetCurrentIteration() (*messages.GitLabIteration, error) {
+	iters, _, err := c.Raw.ProjectIterations.ListProjectIterations(c.ProjectID, &gitlab.ListProjectIterationsOptions{
+		State:            gitlab.Ptr("current"),
+		IncludeAncestors: gitlab.Ptr(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(iters) == 0 {
+		return nil, nil
+	}
+	it := iters[0]
+	result := &messages.GitLabIteration{
+		ID:    it.ID,
+		Title: it.Title,
+	}
+	if it.StartDate != nil {
+		result.Start = time.Time(*it.StartDate)
+	}
+	if it.DueDate != nil {
+		result.Due = time.Time(*it.DueDate)
+	}
+	return result, nil
+}
+
+// ListMyIssues returns issues assigned to, created by, or mentioning the authenticated user,
+// plus the current iteration info.
+func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabIssue, currentIter *messages.GitLabIteration, err error) {
 	seenAssigned := make(map[int64]bool)
 	seenCreated := make(map[int64]bool)
+
+	// Fetch current iteration (non-critical, ignore errors).
+	currentIter, _ = c.GetCurrentIteration()
 
 	// Fetch assigned issues for all tracked users.
 	for _, username := range c.Usernames {
@@ -53,7 +83,7 @@ func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabI
 		}
 	}
 
-	return assigned, created, nil, nil
+	return assigned, created, nil, currentIter, nil
 }
 
 // GetIssue returns a single issue with its notes.
@@ -161,20 +191,31 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 	if issue.Milestone != nil {
 		milestone = issue.Milestone.Title
 	}
+	var iteration, iterationDates string
+	if issue.Iteration != nil {
+		iteration = issue.Iteration.Title
+		if issue.Iteration.StartDate != nil && issue.Iteration.DueDate != nil {
+			start := time.Time(*issue.Iteration.StartDate)
+			due := time.Time(*issue.Iteration.DueDate)
+			iterationDates = fmt.Sprintf("%s – %s", start.Format("Jan 2"), due.Format("Jan 2, 2006"))
+		}
+	}
 	return messages.GitLabIssue{
-		ID:          issue.ID,
-		IID:         issue.IID,
-		ProjectID:   issue.ProjectID,
-		Title:       issue.Title,
-		State:       issue.State,
-		Description: issue.Description,
-		Labels:      labels,
-		Milestone:   milestone,
-		Author:      issue.Author.Username,
-		Assignee:    assignee,
-		WebURL:      issue.WebURL,
-		CreatedAt:   safeTime(issue.CreatedAt),
-		UpdatedAt:   safeTime(issue.UpdatedAt),
+		ID:             issue.ID,
+		IID:            issue.IID,
+		ProjectID:      issue.ProjectID,
+		Title:          issue.Title,
+		State:          issue.State,
+		Description:    issue.Description,
+		Labels:         labels,
+		Milestone:      milestone,
+		Iteration:      iteration,
+		IterationDates: iterationDates,
+		Author:         issue.Author.Username,
+		Assignee:       assignee,
+		WebURL:         issue.WebURL,
+		CreatedAt:      safeTime(issue.CreatedAt),
+		UpdatedAt:      safeTime(issue.UpdatedAt),
 	}
 }
 
@@ -194,6 +235,13 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote) 
 	}
 	if issue.Milestone != "" {
 		fmt.Fprintf(&b, "Milestone: %s\n", issue.Milestone)
+	}
+	if issue.Iteration != "" {
+		iter := issue.Iteration
+		if issue.IterationDates != "" {
+			iter += " (" + issue.IterationDates + ")"
+		}
+		fmt.Fprintf(&b, "Iteration: %s\n", iter)
 	}
 	fmt.Fprintf(&b, "Created:   %s\n", issue.CreatedAt.Format("2006-01-02 15:04"))
 	fmt.Fprintf(&b, "Updated:   %s\n", issue.UpdatedAt.Format("2006-01-02 15:04"))

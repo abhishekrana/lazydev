@@ -93,18 +93,38 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		t.issues = nil
 		var containers []messages.Container
+		seenInSprint := make(map[int64]bool)
+
+		// Current Sprint group: issues with an iteration matching the current one.
+		if msg.CurrentIteration != nil {
+			allIssues := append(append(msg.Assigned, msg.Created...), msg.Mentioned...)
+			for _, issue := range allIssues {
+				if issue.Iteration == msg.CurrentIteration.Title && !seenInSprint[issue.IID] {
+					seenInSprint[issue.IID] = true
+					sprintGroup := fmt.Sprintf("Current Sprint: %s", msg.CurrentIteration.Title)
+					if !msg.CurrentIteration.Due.IsZero() {
+						sprintGroup += fmt.Sprintf(" (due %s)", msg.CurrentIteration.Due.Format("Jan 2"))
+					}
+					t.issues = append(t.issues, issue)
+					containers = append(containers, issueToContainer(issue, sprintGroup))
+				}
+			}
+		}
+
 		for _, issue := range msg.Assigned {
-			t.issues = append(t.issues, issue)
-			containers = append(containers, issueToContainer(issue, "Assigned to me"))
+			if !seenInSprint[issue.IID] {
+				t.issues = append(t.issues, issue)
+				containers = append(containers, issueToContainer(issue, "Assigned to me"))
+			}
 		}
 		for _, issue := range msg.Created {
-			if !issueInList(issue, msg.Assigned) {
+			if !issueInList(issue, msg.Assigned) && !seenInSprint[issue.IID] {
 				t.issues = append(t.issues, issue)
 				containers = append(containers, issueToContainer(issue, "Created by me"))
 			}
 		}
 		for _, issue := range msg.Mentioned {
-			if !issueInList(issue, msg.Assigned) && !issueInList(issue, msg.Created) {
+			if !issueInList(issue, msg.Assigned) && !issueInList(issue, msg.Created) && !seenInSprint[issue.IID] {
 				t.issues = append(t.issues, issue)
 				containers = append(containers, issueToContainer(issue, "Mentioned"))
 			}
@@ -299,12 +319,13 @@ func (t *IssuesTab) toggleFocus() {
 
 func (t *IssuesTab) fetchIssues() tea.Cmd {
 	return func() tea.Msg {
-		assigned, created, mentioned, err := t.client.ListMyIssues()
+		assigned, created, mentioned, currentIter, err := t.client.ListMyIssues()
 		return messages.IssueListMsg{
-			Assigned:  assigned,
-			Created:   created,
-			Mentioned: mentioned,
-			Err:       err,
+			Assigned:         assigned,
+			Created:          created,
+			Mentioned:        mentioned,
+			CurrentIteration: currentIter,
+			Err:              err,
 		}
 	}
 }
