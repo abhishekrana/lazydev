@@ -381,26 +381,39 @@ func (l LogView) visibleLines() []messages.LogLine {
 }
 
 func (l LogView) renderLine(line messages.LogLine) string {
-	var parts []string
+	var prefixParts []string
+	prefixLen := 0
 
 	// Source label for merged views.
 	if line.Source != "" && l.sourceLabel == "" {
-		sourceTag := fmt.Sprintf("[%s]", line.SourceID)
-		parts = append(parts, theme.LogTimestampStyle.Render(sourceTag))
+		tag := fmt.Sprintf("[%s]", line.SourceID)
+		prefixParts = append(prefixParts, theme.LogTimestampStyle.Render(tag))
+		prefixLen += len(tag) + 1
 	}
 
 	// Timestamp.
 	if !line.Time.IsZero() {
 		ts := line.Time.Format("15:04:05")
-		parts = append(parts, theme.LogTimestampStyle.Render(ts))
+		prefixParts = append(prefixParts, theme.LogTimestampStyle.Render(ts))
+		prefixLen += len(ts) + 1
 	}
 
-	// Text with level coloring and search highlighting.
+	// Truncate raw text to fit width (accounting for prefix).
 	text := line.Text
-	styled := l.styleText(text, line.Level)
-	parts = append(parts, styled)
+	if l.width > 0 {
+		maxText := l.width - prefixLen
+		if maxText < 10 {
+			maxText = 10
+		}
+		if len(text) > maxText {
+			text = text[:maxText]
+		}
+	}
 
-	return strings.Join(parts, " ")
+	styled := l.styleText(text, line.Level)
+	prefixParts = append(prefixParts, styled)
+
+	return strings.Join(prefixParts, " ")
 }
 
 func (l LogView) styleText(text string, level messages.LogLevel) string {
