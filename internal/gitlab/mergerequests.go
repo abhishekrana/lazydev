@@ -11,41 +11,42 @@ import (
 
 // ListMyMRs returns merge requests authored by, reviewing, or all open.
 func (c *Client) ListMyMRs() (mine, reviewRequested, allOpen []messages.GitLabMR, err error) {
-	seen := make(map[int64]bool)
+	seenMine := make(map[int64]bool)
+	seenReview := make(map[int64]bool)
 
 	// My MRs (authored by any tracked user).
-	for _, uid := range c.UserIDs {
+	for _, username := range c.Usernames {
 		opts := &gitlab.ListProjectMergeRequestsOptions{
-			State:       gitlab.Ptr("opened"),
-			ListOptions: gitlab.ListOptions{PerPage: 50},
-			AuthorID:    gitlab.Ptr(uid),
+			State:          gitlab.Ptr("opened"),
+			ListOptions:    gitlab.ListOptions{PerPage: 50},
+			AuthorUsername: gitlab.Ptr(username),
 		}
 		raw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
 		if err != nil {
 			continue
 		}
 		for _, mr := range convertMRs(raw) {
-			if !seen[mr.IID] {
-				seen[mr.IID] = true
+			if !seenMine[mr.IID] {
+				seenMine[mr.IID] = true
 				mine = append(mine, mr)
 			}
 		}
 	}
 
 	// Review requested (for any tracked user).
-	for _, uid := range c.UserIDs {
+	for _, username := range c.Usernames {
 		opts := &gitlab.ListProjectMergeRequestsOptions{
-			State:       gitlab.Ptr("opened"),
-			ListOptions: gitlab.ListOptions{PerPage: 50},
-			ReviewerID:  gitlab.ReviewerID(uid),
+			State:            gitlab.Ptr("opened"),
+			ListOptions:      gitlab.ListOptions{PerPage: 50},
+			ReviewerUsername: gitlab.Ptr(username),
 		}
 		raw, _, err := c.Raw.MergeRequests.ListProjectMergeRequests(c.ProjectID, opts)
 		if err != nil {
 			continue
 		}
 		for _, mr := range convertMRs(raw) {
-			if !seen[mr.IID] {
-				seen[mr.IID] = true
+			if !seenMine[mr.IID] && !seenReview[mr.IID] {
+				seenReview[mr.IID] = true
 				reviewRequested = append(reviewRequested, mr)
 			}
 		}
