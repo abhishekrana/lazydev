@@ -166,6 +166,32 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 	case kubeRefreshTickMsg:
 		return t, tea.Batch(t.fetchPods(), t.tickRefresh())
 
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		sidebarWidth := t.width * 30 / 100
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if mouse.X < sidebarWidth {
+			t.focusSidebar = true
+			t.sidebar.SetFocused(true)
+			t.logView.SetFocused(false)
+			t.detailPane.SetFocused(false)
+			cmd := t.sidebar.Update(msg)
+			if item, ok := t.sidebar.SelectedItem(); ok && (item.ID != t.selected || item.Group != t.selectedNs) {
+				return t, tea.Batch(cmd, t.selectPod(item.ID, item.Name, item.Group))
+			}
+			return t, cmd
+		}
+		t.focusSidebar = false
+		t.sidebar.SetFocused(false)
+		if t.rightPane == kubeRightDetail {
+			t.detailPane.SetFocused(true)
+		} else {
+			t.logView.SetFocused(true)
+		}
+		return t, nil
+
 	case tea.KeyPressMsg:
 		// Global keys for this tab.
 		switch {

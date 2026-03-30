@@ -152,6 +152,35 @@ func (t *DockerTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 	case refreshTickMsg:
 		return t, tea.Batch(t.fetchContainers(), t.tickRefresh())
 
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		sidebarWidth := t.width * 30 / 100
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if mouse.X < sidebarWidth {
+			// Click on sidebar — focus it and forward the click.
+			t.focusSidebar = true
+			t.sidebar.SetFocused(true)
+			t.logView.SetFocused(false)
+			t.detailPane.SetFocused(false)
+			cmd := t.sidebar.Update(msg)
+			// Auto-select container if clicked on an item.
+			if item, ok := t.sidebar.SelectedItem(); ok && item.ID != t.selected {
+				return t, tea.Batch(cmd, t.selectContainer(item.ID, item.Name))
+			}
+			return t, cmd
+		}
+		// Click on right pane — focus it.
+		t.focusSidebar = false
+		t.sidebar.SetFocused(false)
+		if t.rightPane == paneDetail {
+			t.detailPane.SetFocused(true)
+		} else {
+			t.logView.SetFocused(true)
+		}
+		return t, nil
+
 	case tea.KeyPressMsg:
 		// Global keys for this tab (regardless of focus).
 		switch {

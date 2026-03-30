@@ -133,12 +133,29 @@ func (s Sidebar) Focused() bool {
 
 // Update handles input for the sidebar.
 func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
-	if !s.focused {
-		return nil
-	}
-
 	switch msg := msg.(type) {
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		// Map click Y to row index (relative to sidebar area).
+		clickedRow := mouse.Y + s.offset
+		if clickedRow >= 0 && clickedRow < len(s.rows) {
+			s.cursor = clickedRow
+			// Toggle group on click.
+			if s.rows[clickedRow].isGroup {
+				group := s.rows[clickedRow].group
+				s.collapsed[group] = !s.collapsed[group]
+				s.rebuildRows()
+				if s.cursor >= len(s.rows) {
+					s.cursor = len(s.rows) - 1
+				}
+			}
+		}
+		return nil
+
 	case tea.KeyPressMsg:
+		if !s.focused {
+			return nil
+		}
 		switch {
 		case key.Matches(msg, theme.Keys.Up):
 			if s.cursor > 0 {

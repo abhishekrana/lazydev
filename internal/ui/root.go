@@ -93,6 +93,22 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		// Tab bar click (row 0 or 1, within the tab bar area).
+		if mouse.Y <= 1 {
+			x := 0
+			for i, tab := range m.tabs {
+				tabWidth := len(tab.Title()) + 4 // padding
+				if mouse.X >= x && mouse.X < x+tabWidth {
+					m.activeTab = i
+					m.tabBar.ActiveTab = m.activeTab
+					return m, nil
+				}
+				x += tabWidth
+			}
+		}
+
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
@@ -247,6 +263,7 @@ func (m RootModel) View() tea.View {
 		statusBarView,
 	))
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
