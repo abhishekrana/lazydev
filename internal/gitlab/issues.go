@@ -191,8 +191,10 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 	if issue.Milestone != nil {
 		milestone = issue.Milestone.Title
 	}
+	var iterationID int64
 	var iteration, iterationDates string
 	if issue.Iteration != nil {
+		iterationID = issue.Iteration.ID
 		iteration = issue.Iteration.Title
 		if issue.Iteration.StartDate != nil && issue.Iteration.DueDate != nil {
 			start := time.Time(*issue.Iteration.StartDate)
@@ -209,6 +211,7 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 		Description:    issue.Description,
 		Labels:         labels,
 		Milestone:      milestone,
+		IterationID:    iterationID,
 		Iteration:      iteration,
 		IterationDates: iterationDates,
 		Author:         issue.Author.Username,

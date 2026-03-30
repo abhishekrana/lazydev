@@ -179,6 +179,7 @@ type GitLabIssue struct {
 	Description        string
 	Labels             []string
 	Milestone          string
+	IterationID        int64  // iteration ID for matching
 	Iteration          string // iteration title (e.g. "Sprint 5")
 	IterationDates     string // e.g. "Mar 22 – Apr 4, 2026"
 	Author             string

@@ -95,36 +95,46 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		var containers []messages.Container
 		seenInSprint := make(map[int64]bool)
 
-		// Current Sprint group: issues with an iteration matching the current one.
+		// Current Sprint group: issues belonging to the current iteration.
 		if msg.CurrentIteration != nil {
+			// Build the sprint group label.
+			sprintGroup := "Current Sprint"
+			if msg.CurrentIteration.Title != "" {
+				sprintGroup += ": " + msg.CurrentIteration.Title
+			}
+			if !msg.CurrentIteration.Due.IsZero() {
+				sprintGroup += fmt.Sprintf(" (due %s)", msg.CurrentIteration.Due.Format("Jan 2"))
+			}
+
+			iterID := msg.CurrentIteration.ID
 			allIssues := append(append(msg.Assigned, msg.Created...), msg.Mentioned...)
 			for _, issue := range allIssues {
-				if issue.Iteration == msg.CurrentIteration.Title && !seenInSprint[issue.IID] {
+				if issueInIteration(issue, iterID) && !seenInSprint[issue.IID] {
 					seenInSprint[issue.IID] = true
-					sprintGroup := fmt.Sprintf("Current Sprint: %s", msg.CurrentIteration.Title)
-					if !msg.CurrentIteration.Due.IsZero() {
-						sprintGroup += fmt.Sprintf(" (due %s)", msg.CurrentIteration.Due.Format("Jan 2"))
-					}
 					t.issues = append(t.issues, issue)
 					containers = append(containers, issueToContainer(issue, sprintGroup))
 				}
 			}
 		}
 
+		seenBacklog := make(map[int64]bool)
 		for _, issue := range msg.Assigned {
-			if !seenInSprint[issue.IID] {
+			if !seenInSprint[issue.IID] && !seenBacklog[issue.IID] {
+				seenBacklog[issue.IID] = true
 				t.issues = append(t.issues, issue)
-				containers = append(containers, issueToContainer(issue, "Assigned to me"))
+				containers = append(containers, issueToContainer(issue, "Backlog"))
 			}
 		}
 		for _, issue := range msg.Created {
-			if !issueInList(issue, msg.Assigned) && !seenInSprint[issue.IID] {
+			if !seenInSprint[issue.IID] && !seenBacklog[issue.IID] {
+				seenBacklog[issue.IID] = true
 				t.issues = append(t.issues, issue)
-				containers = append(containers, issueToContainer(issue, "Created by me"))
+				containers = append(containers, issueToContainer(issue, "Backlog"))
 			}
 		}
 		for _, issue := range msg.Mentioned {
-			if !issueInList(issue, msg.Assigned) && !issueInList(issue, msg.Created) && !seenInSprint[issue.IID] {
+			if !seenInSprint[issue.IID] && !seenBacklog[issue.IID] {
+				seenBacklog[issue.IID] = true
 				t.issues = append(t.issues, issue)
 				containers = append(containers, issueToContainer(issue, "Mentioned"))
 			}
@@ -440,6 +450,10 @@ func issueToContainer(issue messages.GitLabIssue, group string) messages.Contain
 		State: state,
 		Group: group,
 	}
+}
+
+func issueInIteration(issue messages.GitLabIssue, iterationID int64) bool {
+	return issue.IterationID == iterationID && iterationID != 0
 }
 
 func issueInList(issue messages.GitLabIssue, list []messages.GitLabIssue) bool {
