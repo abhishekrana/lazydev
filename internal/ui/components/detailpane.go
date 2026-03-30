@@ -10,11 +10,11 @@ import (
 
 // DetailPane displays formatted text (JSON inspect, YAML, describe output).
 type DetailPane struct {
-	content string
-	title   string
-	offset  int
-	width   int
-	height  int
+	content  string
+	title    string
+	offset   int
+	width    int
+	height   int
 	focused  bool
 	lines    []string
 	pendingG bool

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/abhishek-rana/lazydk/internal/ui/theme"
 	"github.com/abhishek-rana/lazydk/pkg/messages"
@@ -27,25 +28,32 @@ type displayRow struct {
 
 // Sidebar is a grouped list sidebar component with collapsible groups.
 type Sidebar struct {
-	items      []SidebarItem
-	groups     []string
-	groupItems map[string][]int
-	collapsed  map[string]bool
-	rows       []displayRow // flattened display rows
-	cursor     int          // index into rows
-	offset     int
-	pendingG   bool // waiting for second 'g' in gg sequence
-	width      int
-	height     int
-	focused    bool
-	yOffset    int // screen Y offset (e.g. tab bar height)
+	items       []SidebarItem
+	groups      []string
+	groupItems  map[string][]int
+	collapsed   map[string]bool
+	rows        []displayRow // flattened display rows
+	cursor      int          // index into rows
+	offset      int
+	pendingG    bool // waiting for second 'g' in gg sequence
+	searching   bool
+	searchInput textinput.Model
+	searchQuery string
+	width       int
+	height      int
+	focused     bool
+	yOffset     int // screen Y offset (e.g. tab bar height)
 }
 
 // NewSidebar creates a new sidebar.
 func NewSidebar() Sidebar {
+	ti := textinput.New()
+	ti.Placeholder = "filter..."
+	ti.CharLimit = 64
 	return Sidebar{
-		groupItems: make(map[string][]int),
-		collapsed:  make(map[string]bool),
+		groupItems:  make(map[string][]int),
+		collapsed:   make(map[string]bool),
+		searchInput: ti,
 	}
 }
 
@@ -87,14 +95,28 @@ func (s *Sidebar) SetItems(containers []messages.Container) {
 // rebuildRows flattens groups + items into display rows respecting collapsed state.
 func (s *Sidebar) rebuildRows() {
 	s.rows = nil
+	query := strings.ToLower(s.searchQuery)
+
 	for _, group := range s.groups {
 		indices := s.groupItems[group]
 		if len(indices) == 0 {
 			continue
 		}
+
+		// Filter items by search query.
+		var filtered []int
+		for _, idx := range indices {
+			if query == "" || strings.Contains(strings.ToLower(s.items[idx].Name), query) {
+				filtered = append(filtered, idx)
+			}
+		}
+		if len(filtered) == 0 {
+			continue
+		}
+
 		s.rows = append(s.rows, displayRow{isGroup: true, group: group})
 		if !s.collapsed[group] {
-			for _, idx := range indices {
+			for _, idx := range filtered {
 				s.rows = append(s.rows, displayRow{isGroup: false, group: group, itemIdx: idx})
 			}
 		}
@@ -140,6 +162,10 @@ func (s Sidebar) Focused() bool {
 
 // Update handles input for the sidebar.
 func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
+	if s.searching {
+		return s.updateSearch(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
@@ -184,8 +210,14 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 			} else {
 				s.pendingG = true
 			}
+		case key.Matches(msg, theme.Keys.Search):
+			s.pendingG = false
+			s.searching = true
+			s.searchInput.Focus()
+			return nil
 		case key.Matches(msg, theme.Keys.Enter):
 			// Toggle collapse on group headers.
+			s.pendingG = false
 			if s.cursor >= 0 && s.cursor < len(s.rows) && s.rows[s.cursor].isGroup {
 				group := s.rows[s.cursor].group
 				s.collapsed[group] = !s.collapsed[group]
@@ -200,6 +232,37 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+func (s *Sidebar) updateSearch(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc": //nolint:goconst // idiomatic key name
+			s.searching = false
+			s.searchQuery = ""
+			s.searchInput.SetValue("")
+			s.searchInput.Blur()
+			s.rebuildRows()
+			s.cursor = 0
+			return nil
+		case "enter": //nolint:goconst // idiomatic key name
+			s.searchQuery = s.searchInput.Value()
+			s.searching = false
+			s.searchInput.Blur()
+			s.rebuildRows()
+			s.cursor = 0
+			return nil
+		}
+	}
+
+	var cmd tea.Cmd
+	s.searchInput, cmd = s.searchInput.Update(msg)
+	// Live filter as user types.
+	s.searchQuery = s.searchInput.Value()
+	s.rebuildRows()
+	s.cursor = 0
+	return cmd
+}
+
 // View renders the sidebar.
 func (s Sidebar) View() string {
 	if len(s.rows) == 0 {
@@ -211,6 +274,10 @@ func (s Sidebar) View() string {
 
 	var b strings.Builder
 	visibleHeight := s.height
+	showSearchBar := s.searching || s.searchQuery != ""
+	if showSearchBar {
+		visibleHeight--
+	}
 
 	// Ensure cursor is visible.
 	if s.cursor < s.offset {
@@ -265,6 +332,16 @@ func (s Sidebar) View() string {
 		b.WriteString(strings.Repeat(" ", s.width))
 		b.WriteString("\n")
 		lineCount++
+	}
+
+	// Search bar at bottom.
+	if showSearchBar {
+		if s.searching {
+			b.WriteString(theme.SearchStyle.Render("/") + s.searchInput.View())
+		} else {
+			b.WriteString(theme.SearchStyle.Render(fmt.Sprintf("/%s", s.searchQuery)))
+		}
+		b.WriteString("\n")
 	}
 
 	return theme.SidebarStyle.Width(s.width).Height(s.height).Render(b.String())
