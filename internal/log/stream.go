@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"regexp"
 	"sync"
 	"time"
 
@@ -82,6 +83,9 @@ func (sm *StreamManager) readLoop(ctx context.Context, id string, reader io.Read
 		}
 
 		text := scanner.Text()
+		// Strip Docker multiplexed stream header and ANSI escape codes.
+		text = stripDockerHeader(text)
+		text = stripANSI(text)
 		line := messages.LogLine{
 			Source:   source,
 			SourceID: id,
@@ -106,6 +110,29 @@ func (sm *StreamManager) readLoop(ctx context.Context, id string, reader io.Read
 	sm.mu.Lock()
 	delete(sm.streams, id)
 	sm.mu.Unlock()
+}
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI escape codes from a string.
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
+
+// stripDockerHeader removes the 8-byte Docker multiplexed stream header
+// that appears at the start of log lines from non-TTY containers.
+// The header format is: [stream_type(1)][0][0][0][size(4)] = 8 bytes.
+func stripDockerHeader(s string) string {
+	if len(s) < 8 {
+		return s
+	}
+	// Docker header starts with byte 0x01 (stdout) or 0x02 (stderr),
+	// followed by three zero bytes.
+	b := s[0]
+	if (b == 0x01 || b == 0x02) && s[1] == 0x00 && s[2] == 0x00 && s[3] == 0x00 {
+		return s[8:]
+	}
+	return s
 }
 
 // GetChannel returns the log channel for the given stream, or nil if not found.

@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/abhishek-rana/lazydk/pkg/messages"
 )
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 // jsonLine is the structured JSON format for exported log lines.
 type jsonLine struct {
@@ -34,9 +37,12 @@ func LinesToText(lines []messages.LogLine) string {
 			b.WriteString(line.SourceID)
 			b.WriteString("] ")
 		}
-		b.WriteString(levelString(line.Level))
-		b.WriteString(" ")
-		b.WriteString(line.Text)
+		lvl := levelString(line.Level)
+		if lvl != "" {
+			b.WriteString(lvl)
+			b.WriteString(" ")
+		}
+		b.WriteString(stripANSI(line.Text))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -50,7 +56,7 @@ func LinesToJSON(lines []messages.LogLine) string {
 			Source:    line.Source,
 			Container: line.SourceID,
 			Level:     levelString(line.Level),
-			Text:      line.Text,
+			Text:      stripANSI(line.Text),
 		}
 		if !line.Time.IsZero() {
 			jl.Timestamp = line.Time.Format(time.RFC3339)
@@ -135,4 +141,9 @@ func levelString(level messages.LogLevel) string {
 	default:
 		return ""
 	}
+}
+
+// stripANSI removes ANSI escape codes from a string.
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
 }
