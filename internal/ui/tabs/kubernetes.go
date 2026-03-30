@@ -71,7 +71,7 @@ func (t *KubeTab) SetSize(width, height int) {
 	t.width = width
 	t.height = height
 
-	sidebarWidth := width * 30 / 100
+	sidebarWidth := width * 15 / 100
 	if sidebarWidth < 20 {
 		sidebarWidth = 20
 	}
@@ -170,7 +170,7 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
-		sidebarWidth := t.width * 30 / 100
+		sidebarWidth := t.width * 15 / 100
 		if sidebarWidth < 20 {
 			sidebarWidth = 20
 		}
@@ -310,7 +310,7 @@ func (t *KubeTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 }
 
 func (t *KubeTab) View() string {
-	sidebarWidth := t.width * 30 / 100
+	sidebarWidth := t.width * 15 / 100
 	if sidebarWidth < 20 {
 		sidebarWidth = 20
 	}
