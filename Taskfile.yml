@@ -34,7 +34,7 @@ tasks:
     cmds:
       - go mod tidy
 
-  fmt:
+  format:
     desc: Format Go and Markdown files
     cmds:
       - gofmt -s -w .
@@ -49,14 +49,6 @@ tasks:
         docker run --rm -u "$(id -u):$(id -g)" -v $(pwd):/work tmknom/prettier:{{.PRETTIER_VERSION}} --check "**/*.yaml"
         docker run --rm -u "$(id -u):$(id -g)" -v $(pwd):/work tmknom/prettier:{{.PRETTIER_VERSION}} --check "**/*.yml"
 
-  format:
-    desc: Format files with Docker prettier
-    cmds:
-      - |
-        docker run --rm -u "$(id -u):$(id -g)" -v $(pwd):/work tmknom/prettier:{{.PRETTIER_VERSION}} --write "**/*.md"
-        docker run --rm -u "$(id -u):$(id -g)" -v $(pwd):/work tmknom/prettier:{{.PRETTIER_VERSION}} --write "**/*.yaml"
-        docker run --rm -u "$(id -u):$(id -g)" -v $(pwd):/work tmknom/prettier:{{.PRETTIER_VERSION}} --write "**/*.yml"
-
   lint:
     desc: Run linter
     cmds:
@@ -65,7 +57,7 @@ tasks:
   check:
     desc: Format, lint, and build
     cmds:
-      - task: fmt
+      - task: format
       - task: lint
       - task: build
 

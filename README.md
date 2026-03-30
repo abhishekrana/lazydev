@@ -68,15 +68,15 @@ lazydev --kubeconfig ~/.kube/my-config
 
 ### Navigation
 
-| Key                  | Action                             |
-| -------------------- | ---------------------------------- |
-| `j` / `Down`         | Move down                          |
-| `k` / `Up`           | Move up                            |
+| Key                  | Action                              |
+| -------------------- | ----------------------------------- |
+| `j` / `Down`         | Move down                           |
+| `k` / `Up`           | Move up                             |
 | `Ctrl+W W` / `Alt+W` | Toggle pane focus (sidebar ↔ logs) |
-| `Enter`              | Select item / move focus to logs   |
-| `Esc`                | Back / cancel                      |
-| `gg`                 | Go to top                          |
-| `G`                  | Go to bottom (auto-follow)         |
+| `Enter`              | Select item / move focus to logs    |
+| `Esc`                | Back / cancel                       |
+| `gg`                 | Go to top                           |
+| `G`                  | Go to bottom (auto-follow)          |
 
 ### Log View
 

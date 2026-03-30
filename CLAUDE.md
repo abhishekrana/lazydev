@@ -13,7 +13,7 @@ task build       # Build binary (output: ./lazydev)
 task run         # Build and run
 task clean       # Remove binary
 task tidy        # go mod tidy
-task fmt         # Format Go + Markdown files
+task format      # Format Go + Markdown files
 task lint        # Run golangci-lint
 task check       # Format + lint + build (run before committing)
 go build ./...   # Build all packages (check compilation)
