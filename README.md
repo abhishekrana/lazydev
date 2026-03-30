@@ -19,7 +19,7 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 - **Container actions** — restart, stop, remove, inspect, exec, port-forward, scale
 - **Vim + arrow key navigation** — hjkl and arrow keys, `Ctrl+W W` / `Alt+W` for pane switching
 - **Sidebar search** — `/` in sidebar for live resource filtering
-- **Mouse support** — click to select tabs, resources, and switch focus
+- **Mouse support** — click to select tabs, resources, and log lines; scroll wheel in log pane
 - **Solarized Light theme** — clean, readable color palette
 - **LLM-friendly exports** — structured text/JSON export for AI-assisted debugging
 
@@ -28,7 +28,7 @@ Inspired by [lazydocker](https://github.com/jesseduffield/lazydocker), [k9s](htt
 ### From source
 
 ```bash
-git clone https://github.com/abhishek-rana/lazydev.git
+git clone https://github.com/abhishekrana/lazydev.git
 cd lazydev
 make build
 ```
@@ -36,7 +36,7 @@ make build
 ### Go install
 
 ```bash
-go install github.com/abhishek-rana/lazydev/cmd/lazydev@latest
+go install github.com/abhishekrana/lazydev/cmd/lazydev@latest
 ```
 
 ## Usage
@@ -59,6 +59,7 @@ lazydev --kubeconfig ~/.kube/my-config
 | Key | Action |
 |-----|--------|
 | `q` / `Ctrl+C` | Quit |
+| `1`-`4` | Switch to tab by number |
 | `Tab` | Next tab |
 | `Shift+Tab` | Previous tab |
 | `?` | Help |

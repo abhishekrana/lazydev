@@ -66,4 +66,4 @@ All 7 phases complete, plus UX polish:
 - Phase 5: Dashboard tab with sortable table, Docker stats (CPU/mem)
 - Phase 6: Exec shell (x), port-forward (p), scale deployment (S)
 - Phase 7: Help overlay (?), command palette (:), goreleaser config
-- UX polish: Solarized Light theme, vim gg/G navigation, sidebar `/` search, Ctrl+W W pane switching, cursor highlight in log pane, wrap toggle (w), log export (y/Y/e/E/o), Docker header & ANSI stripping, mouse click support
+- UX polish: Solarized Light theme, vim gg/G navigation, sidebar `/` search, Ctrl+W W pane switching, cursor highlight in log pane, wrap toggle (w), log export (y/Y/e/E/o), Docker header & ANSI stripping, mouse click/scroll support, 1-4 tab selection
