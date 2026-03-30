@@ -196,7 +196,7 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
-		case "ctrl+r":
+		case "r":
 			t.notification = "Refreshing..."
 			return t, t.fetchMRs()
 		case "ctrl+w", "ctrl+W":
@@ -231,7 +231,7 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 		if mr := t.findSelectedMR(); mr != nil && mr.WebURL != "" {
 			_ = openBrowser(mr.WebURL)
 		}
-	case msg.String() == "r":
+	case msg.String() == "R":
 		// Review in neovim with DiffviewOpen.
 		if mr := t.findSelectedMR(); mr != nil {
 			return t, t.reviewInNeovim(mr)

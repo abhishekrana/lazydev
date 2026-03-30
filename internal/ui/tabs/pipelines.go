@@ -225,7 +225,7 @@ func (t *PipelinesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
-		case "ctrl+r":
+		case "r":
 			t.notification = "Refreshing..."
 			return t, t.fetchPipelines()
 		case "ctrl+w", "ctrl+W":
