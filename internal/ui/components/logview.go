@@ -25,6 +25,7 @@ type LogView struct {
 	searchQuery string
 	sourceLabel string
 	levelFilter messages.LogLevel // LogLevelUnknown = show all
+	pendingG    bool
 }
 
 // NewLogView creates a new log viewport.
@@ -146,11 +147,19 @@ func (l *LogView) Update(msg tea.Msg) tea.Cmd {
 				l.scrollToBottom()
 			}
 		case msg.String() == "G":
+			l.pendingG = false
 			l.autoScroll = true
 			l.scrollToBottom()
 		case msg.String() == "g":
-			l.autoScroll = false
-			l.offset = 0
+			if l.pendingG {
+				l.autoScroll = false
+				l.offset = 0
+				l.pendingG = false
+			} else {
+				l.pendingG = true
+			}
+		default:
+			l.pendingG = false
 		}
 	}
 

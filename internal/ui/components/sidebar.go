@@ -34,6 +34,7 @@ type Sidebar struct {
 	rows       []displayRow // flattened display rows
 	cursor     int          // index into rows
 	offset     int
+	pendingG   bool // waiting for second 'g' in gg sequence
 	width      int
 	height     int
 	focused    bool
@@ -164,12 +165,24 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 		}
 		switch {
 		case key.Matches(msg, theme.Keys.Up):
+			s.pendingG = false
 			if s.cursor > 0 {
 				s.cursor--
 			}
 		case key.Matches(msg, theme.Keys.Down):
+			s.pendingG = false
 			if s.cursor < len(s.rows)-1 {
 				s.cursor++
+			}
+		case msg.String() == "G":
+			s.cursor = len(s.rows) - 1
+			s.pendingG = false
+		case msg.String() == "g":
+			if s.pendingG {
+				s.cursor = 0
+				s.pendingG = false
+			} else {
+				s.pendingG = true
 			}
 		case key.Matches(msg, theme.Keys.Enter):
 			// Toggle collapse on group headers.

@@ -15,8 +15,9 @@ type DetailPane struct {
 	offset  int
 	width   int
 	height  int
-	focused bool
-	lines   []string
+	focused  bool
+	lines    []string
+	pendingG bool
 }
 
 // NewDetailPane creates a new detail pane.
@@ -89,12 +90,20 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 				d.offset++
 			}
 		case msg.String() == "G":
+			d.pendingG = false
 			maxOffset := len(d.lines) - d.viewableHeight()
 			if maxOffset > 0 {
 				d.offset = maxOffset
 			}
 		case msg.String() == "g":
-			d.offset = 0
+			if d.pendingG {
+				d.offset = 0
+				d.pendingG = false
+			} else {
+				d.pendingG = true
+			}
+		default:
+			d.pendingG = false
 		}
 	}
 
