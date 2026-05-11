@@ -165,6 +165,11 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
+	case messages.ApplyViewMsg:
+		t.queryExpr = msg.Expr
+		t.notification = "view: " + msg.Name
+		return t, t.fetchMRs()
+
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		sidebarWidth := t.width * 25 / 100

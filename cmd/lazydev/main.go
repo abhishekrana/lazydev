@@ -43,7 +43,7 @@ func main() {
 		tabs.NewMRsTab(state.GitLabClient, state.Cache, state.Syncer, aiUser),
 	}
 
-	root := ui.NewRootModel(tabModels)
+	root := ui.NewRootModel(tabModels, state.Views)
 	p := tea.NewProgram(root)
 
 	// Forward sync events into the Bubble Tea program before starting

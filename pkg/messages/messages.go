@@ -164,6 +164,16 @@ type ExportDoneMsg struct {
 	Err     error
 }
 
+// --- Saved view + query messages ---
+
+// ApplyViewMsg requests that the active tab apply the given DSL
+// expression as its current filter (typically from a number-key
+// view recall or from the command palette).
+type ApplyViewMsg struct {
+	Name string
+	Expr string
+}
+
 // --- General UI messages ---
 
 // SwitchTabMsg requests switching to a specific tab.
