@@ -37,9 +37,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
 	}
 
+	aiUser := cfg.GitLab.AIUser
 	tabModels := []ui.TabModel{
-		tabs.NewIssuesTab(state.GitLabClient, state.Cache, state.Syncer),
-		tabs.NewMRsTab(state.GitLabClient, state.Cache, state.Syncer),
+		tabs.NewIssuesTab(state.GitLabClient, state.Cache, state.Syncer, aiUser),
+		tabs.NewMRsTab(state.GitLabClient, state.Cache, state.Syncer, aiUser),
 	}
 
 	root := ui.NewRootModel(tabModels)

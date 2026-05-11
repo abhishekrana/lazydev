@@ -13,6 +13,7 @@ import (
 
 	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
+	"github.com/abhishek-rana/lazydev/internal/query"
 	"github.com/abhishek-rana/lazydev/internal/ui"
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
@@ -24,14 +25,17 @@ type MRsTab struct {
 	client          *gitlabpkg.Client
 	store           *cachepkg.Store
 	syncer          *cachepkg.Syncer
+	aiUser          string
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
+	queryline       components.QueryLine
 	modal           components.Modal
 	focusSidebar    bool
 	width           int
 	height          int
 	selectedIID     int64
 	mrs             []messages.GitLabMR
+	queryExpr       string
 	notification    string
 	pendingCtrlW    bool
 	fetchSeq        uint64
@@ -40,15 +44,17 @@ type MRsTab struct {
 }
 
 // NewMRsTab creates a new GitLab Merge Requests tab.
-func NewMRsTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer) *MRsTab {
+func NewMRsTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer, aiUser string) *MRsTab {
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
 	return &MRsTab{
 		client:       client,
 		store:        store,
 		syncer:       syncer,
+		aiUser:       aiUser,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
+		queryline:    components.NewQueryLine(),
 		modal:        components.NewModal(),
 		focusSidebar: true,
 	}
@@ -194,6 +200,17 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, nil
 
 	case tea.KeyPressMsg:
+		if t.queryline.Visible() {
+			esc, cmd := t.queryline.Update(msg)
+			if esc {
+				t.queryline.Clear()
+				t.queryExpr = ""
+				return t, t.fetchMRs()
+			}
+			t.queryExpr = t.queryline.Value()
+			return t, tea.Batch(cmd, t.fetchMRs())
+		}
+
 		s := msg.String()
 		if t.pendingCtrlW {
 			t.pendingCtrlW = false
@@ -204,6 +221,9 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
+		case "/":
+			t.queryline.Show()
+			return t, nil
 		case "r":
 			if t.syncer != nil {
 				t.syncer.SyncNow()
@@ -305,6 +325,9 @@ func (t *MRsTab) View() string {
 	right := t.detailPane.View()
 
 	view := joinHorizontal(left, right, t.height)
+	if ql := t.queryline.View(); ql != "" {
+		view = ql + "\n" + view
+	}
 	if t.modal.Visible() {
 		return t.modal.View()
 	}
@@ -323,21 +346,51 @@ func (t *MRsTab) toggleFocus() {
 	t.detailPane.SetFocused(!t.focusSidebar)
 }
 
-// fetchMRs reads from the local cache and partitions into the
-// existing MRListMsg groups so the Update handler keeps its
-// grouping logic. Sub-millisecond at our data volumes.
+// fetchMRs reads from the local cache, applying the current queryExpr
+// (if any) through the DSL parser. Partitions results into the legacy
+// MRListMsg groups so the Update handler keeps its grouping logic.
 func (t *MRsTab) fetchMRs() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		all, err := t.store.ListMRs(ctx, cachepkg.Filter{State: "open", Limit: 1000})
+
+		env := query.Env{Me: t.client.Username, AI: t.aiUser}
+		expr := query.Parse(t.queryExpr, env)
+
+		// If the user narrowed to issues, return empty here — the
+		// Issues tab will pick up the same expression.
+		if expr.Kind == "issue" {
+			return messages.MRListMsg{}
+		}
+
+		f := expr.Filter
+		if f.State == "" {
+			f.State = "open"
+		}
+		if f.Limit == 0 {
+			f.Limit = 1000
+		}
+		if !expr.UpdatedAfter.IsZero() {
+			f.UpdatedAfter = expr.UpdatedAfter
+		}
+		if !expr.UpdatedBefore.IsZero() {
+			f.UpdatedBefore = expr.UpdatedBefore
+		}
+
+		all, err := t.store.ListMRs(ctx, f)
 		if err != nil {
 			return messages.MRListMsg{Err: err}
 		}
+
+		// Structured filters → single flat group.
+		if expr.Filter.Assignee != "" || expr.Filter.Author != "" ||
+			len(expr.Filter.Labels) > 0 || expr.Filter.Text != "" {
+			return messages.MRListMsg{AllOpen: all}
+		}
+
 		trackedNames := make(map[string]bool, len(t.client.Usernames))
 		for _, u := range t.client.Usernames {
 			trackedNames[u] = true
 		}
-
 		var mine, review, allOpen []messages.GitLabMR
 		seenMine := make(map[int64]bool)
 		seenReview := make(map[int64]bool)

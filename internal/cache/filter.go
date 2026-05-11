@@ -2,6 +2,7 @@ package cache
 
 import (
 	"strings"
+	"time"
 )
 
 // Filter selects which issues / MRs to return from List* calls.
@@ -30,6 +31,12 @@ type Filter struct {
 	// Resolved through SQLite LIKE for now; query.Search() routes to
 	// FTS5 for ranked cross-kind hits.
 	Text string
+
+	// UpdatedAfter, when non-zero, narrows results to updated_at > t.
+	UpdatedAfter time.Time
+
+	// UpdatedBefore, when non-zero, narrows results to updated_at < t.
+	UpdatedBefore time.Time
 
 	// Limit caps the number of returned rows. Zero means no limit.
 	Limit int
@@ -92,6 +99,14 @@ func buildItemQuery(table, cols string, f Filter) (string, []any) {
 		sb.WriteString(" AND (title LIKE ? OR description LIKE ?)")
 		pat := "%" + f.Text + "%"
 		args = append(args, pat, pat)
+	}
+	if !f.UpdatedAfter.IsZero() {
+		sb.WriteString(" AND updated_at > ?")
+		args = append(args, f.UpdatedAfter.Unix())
+	}
+	if !f.UpdatedBefore.IsZero() {
+		sb.WriteString(" AND updated_at < ?")
+		args = append(args, f.UpdatedBefore.Unix())
 	}
 
 	sb.WriteString(" ORDER BY updated_at DESC")

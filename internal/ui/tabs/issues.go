@@ -13,6 +13,7 @@ import (
 
 	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
+	"github.com/abhishek-rana/lazydev/internal/query"
 	"github.com/abhishek-rana/lazydev/internal/ui"
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
@@ -24,8 +25,10 @@ type IssuesTab struct {
 	client          *gitlabpkg.Client
 	store           *cachepkg.Store
 	syncer          *cachepkg.Syncer
+	aiUser          string
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
+	queryline       components.QueryLine
 	modal           components.Modal
 	inputModal      components.InputModal
 	focusSidebar    bool
@@ -33,6 +36,7 @@ type IssuesTab struct {
 	height          int
 	selectedIID     int64
 	issues          []messages.GitLabIssue // flat list for lookup
+	queryExpr       string
 	notification    string
 	pendingCtrlW    bool
 	fetchSeq        uint64 // detail-fetch staleness counter
@@ -42,15 +46,18 @@ type IssuesTab struct {
 
 // NewIssuesTab creates a new GitLab Issues tab. The cache is the
 // source of truth for reads; the syncer is nudged on manual refresh.
-func NewIssuesTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer) *IssuesTab {
+// aiUser is the username `@ai` resolves to in the query DSL.
+func NewIssuesTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer, aiUser string) *IssuesTab {
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
 	return &IssuesTab{
 		client:       client,
 		store:        store,
 		syncer:       syncer,
+		aiUser:       aiUser,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
+		queryline:    components.NewQueryLine(),
 		modal:        components.NewModal(),
 		inputModal:   components.NewInputModal(),
 		focusSidebar: true,
@@ -240,6 +247,18 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, nil
 
 	case tea.KeyPressMsg:
+		// Queryline intercepts all keys while visible.
+		if t.queryline.Visible() {
+			esc, cmd := t.queryline.Update(msg)
+			if esc {
+				t.queryline.Clear()
+				t.queryExpr = ""
+				return t, t.fetchIssues()
+			}
+			t.queryExpr = t.queryline.Value()
+			return t, tea.Batch(cmd, t.fetchIssues())
+		}
+
 		s := msg.String()
 		if t.pendingCtrlW {
 			t.pendingCtrlW = false
@@ -250,6 +269,9 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
+		case "/":
+			t.queryline.Show()
+			return t, nil
 		case "r":
 			if t.syncer != nil {
 				t.syncer.SyncNow()
@@ -342,6 +364,9 @@ func (t *IssuesTab) View() string {
 
 	_ = rightWidth
 	view := joinHorizontal(left, right, t.height)
+	if ql := t.queryline.View(); ql != "" {
+		view = ql + "\n" + view
+	}
 	if t.modal.Visible() {
 		return t.modal.View()
 	}
@@ -361,22 +386,54 @@ func (t *IssuesTab) toggleFocus() {
 	t.detailPane.SetFocused(!t.focusSidebar)
 }
 
-// fetchIssues reads from the local cache and shapes the result into
-// the legacy IssueListMsg (Assigned / Created / Mentioned partition)
-// so the Update handler keeps its existing grouping logic. This call
-// is sub-millisecond at the data volumes we expect.
+// fetchIssues reads from the local cache, applying the current
+// queryExpr (if any) parsed via the DSL. The result is shaped into
+// the legacy IssueListMsg so the Update handler keeps its grouping
+// logic.
 func (t *IssuesTab) fetchIssues() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		all, err := t.store.ListIssues(ctx, cachepkg.Filter{State: "open", Limit: 1000})
+
+		env := query.Env{Me: t.client.Username, AI: t.aiUser}
+		expr := query.Parse(t.queryExpr, env)
+
+		// If the user explicitly narrowed to MRs, return empty here —
+		// the MRs tab will pick up the same expression.
+		if expr.Kind == "mr" {
+			return messages.IssueListMsg{}
+		}
+
+		f := expr.Filter
+		if f.State == "" {
+			f.State = "open"
+		}
+		if f.Limit == 0 {
+			f.Limit = 1000
+		}
+		if !expr.UpdatedAfter.IsZero() {
+			f.UpdatedAfter = expr.UpdatedAfter
+		}
+		if !expr.UpdatedBefore.IsZero() {
+			f.UpdatedBefore = expr.UpdatedBefore
+		}
+
+		all, err := t.store.ListIssues(ctx, f)
 		if err != nil {
 			return messages.IssueListMsg{Err: err}
 		}
+
+		// If the user filtered by a structured field, return one flat
+		// group: the partition heuristic ("Mine" vs "All") only makes
+		// sense for an unfiltered view.
+		if expr.Filter.Assignee != "" || expr.Filter.Author != "" ||
+			len(expr.Filter.Labels) > 0 || expr.Filter.Text != "" {
+			return messages.IssueListMsg{Created: all}
+		}
+
 		trackedNames := make(map[string]bool, len(t.client.Usernames))
 		for _, u := range t.client.Usernames {
 			trackedNames[u] = true
 		}
-
 		var assigned, created []messages.GitLabIssue
 		seen := make(map[int64]bool)
 		for _, iss := range all {
