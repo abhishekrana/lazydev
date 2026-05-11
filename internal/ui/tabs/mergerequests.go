@@ -336,6 +336,10 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 		if mr := t.findSelectedMR(); mr != nil {
 			return t, t.commentOnMR(mr.IID)
 		}
+	case msg.String() == "T":
+		if mr := t.findSelectedMR(); mr != nil {
+			return t, t.toggleAIAssignee(mr)
+		}
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
@@ -513,10 +517,35 @@ func (t *MRsTab) reopenMR(iid int64) tea.Cmd {
 	}
 }
 
+// toggleAIAssignee flips the MR assignee between the user and the
+// configured AI user.
+func (t *MRsTab) toggleAIAssignee(mr *messages.GitLabMR) tea.Cmd {
+	if t.opts.AIUser == "" {
+		t.notification = noAIUserMsg
+		return nil
+	}
+	aiID, ok := t.client.UserIDFor(t.opts.AIUser)
+	if !ok {
+		t.notification = "ai_user not in additional_users: " + t.opts.AIUser
+		return nil
+	}
+	iid := mr.IID
+	targetID := aiID
+	target := t.opts.AIUser
+	if mr.Assignee == t.opts.AIUser {
+		targetID = t.client.UserID
+		target = t.client.Username
+	}
+	return func() tea.Msg {
+		err := t.client.AssignMR(iid, targetID)
+		return messages.MRActionMsg{Action: "assign to " + target, Err: err}
+	}
+}
+
 func (t *MRsTab) commentOnMR(iid int64) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		editor = "vim"
+		editor = defaultEditor
 	}
 	tmpFile := fmt.Sprintf("/tmp/lazydev-mr-comment-%d.md", iid)
 	_ = os.WriteFile(tmpFile, []byte(""), 0o600) //nolint:gosec // temp file

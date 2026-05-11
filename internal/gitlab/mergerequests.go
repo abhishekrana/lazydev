@@ -94,6 +94,14 @@ func (c *Client) GetMR(iid int64) (messages.GitLabMR, []messages.GitLabNote, err
 	return convertFullMR(mr), notes, nil
 }
 
+// AssignMR sets the assignee on a merge request.
+func (c *Client) AssignMR(iid int64, userID int64) error {
+	_, _, err := c.Raw.MergeRequests.UpdateMergeRequest(c.ProjectID, iid, &gitlab.UpdateMergeRequestOptions{
+		AssigneeIDs: gitlab.Ptr([]int64{userID}),
+	})
+	return err
+}
+
 // ApproveMR approves a merge request.
 func (c *Client) ApproveMR(iid int64) error {
 	_, _, err := c.Raw.MergeRequestApprovals.ApproveMergeRequest(c.ProjectID, iid, &gitlab.ApproveMergeRequestOptions{})

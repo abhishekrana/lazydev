@@ -365,6 +365,14 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 			})
 			return t, nil
 		}
+	case msg.String() == "T":
+		// Toggle assignee between self and configured AI user.
+		if issue := t.findSelectedIssue(); issue != nil {
+			return t, t.toggleAIAssignee(issue)
+		}
+	case msg.String() == "N":
+		// Quick-create issue assigned to AI.
+		return t, t.quickCreateForAI()
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
@@ -538,10 +546,110 @@ func (t *IssuesTab) assignToSelf(iid int64) tea.Cmd {
 	}
 }
 
+// toggleAIAssignee flips the assignee between the authenticated user
+// and cfg.GitLab.AIUser. Returns a no-op cmd if AIUser is unset.
+func (t *IssuesTab) toggleAIAssignee(issue *messages.GitLabIssue) tea.Cmd {
+	if t.opts.AIUser == "" {
+		t.notification = noAIUserMsg
+		return nil
+	}
+	aiID, ok := t.client.UserIDFor(t.opts.AIUser)
+	if !ok {
+		t.notification = "ai_user not in additional_users: " + t.opts.AIUser
+		return nil
+	}
+	iid := issue.IID
+	targetID := aiID
+	target := t.opts.AIUser
+	if issue.Assignee == t.opts.AIUser {
+		targetID = t.client.UserID
+		target = t.client.Username
+	}
+	return func() tea.Msg {
+		err := t.client.AssignIssue(iid, targetID)
+		return messages.IssueActionMsg{Action: "assign to " + target, Err: err}
+	}
+}
+
+// quickCreateForAI spawns $EDITOR on a markdown template, creates the
+// resulting issue, and assigns it to the configured AI user.
+func (t *IssuesTab) quickCreateForAI() tea.Cmd {
+	if t.opts.AIUser == "" {
+		t.notification = noAIUserMsg
+		return nil
+	}
+	aiID, ok := t.client.UserIDFor(t.opts.AIUser)
+	if !ok {
+		t.notification = "ai_user not in additional_users: " + t.opts.AIUser
+		return nil
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = defaultEditor
+	}
+	tmpFile := fmt.Sprintf("/tmp/lazydev-new-issue-%d.md", time.Now().UnixNano())
+	template := "# Title here\n\n## Description\n\nDescribe the task for " + t.opts.AIUser + " below.\n"
+	_ = os.WriteFile(tmpFile, []byte(template), 0o600) //nolint:gosec // temp file
+
+	c := exec.Command(editor, tmpFile) //nolint:gosec,noctx // intentional editor open
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return messages.IssueActionMsg{Action: "quick-create", Err: err}
+		}
+		data, readErr := os.ReadFile(tmpFile) //nolint:gosec // temp file we just created
+		_ = os.Remove(tmpFile)
+		if readErr != nil {
+			return messages.IssueActionMsg{Action: "quick-create", Err: readErr}
+		}
+		title, body, ok := splitIssueDraft(string(data))
+		if !ok {
+			return messages.IssueActionMsg{Action: "quick-create",
+				Err: fmt.Errorf("template missing '# Title' line")}
+		}
+		newIssue, createErr := t.client.CreateIssue(title, body)
+		if createErr != nil {
+			return messages.IssueActionMsg{Action: "quick-create", Err: createErr}
+		}
+		if assignErr := t.client.AssignIssue(newIssue.IID, aiID); assignErr != nil {
+			return messages.IssueActionMsg{
+				Action: fmt.Sprintf("created #%d but assign failed", newIssue.IID),
+				Err:    assignErr,
+			}
+		}
+		// Optimistic cache upsert so the new issue shows up in the
+		// AI-queue view immediately.
+		newIssue.Assignee = t.opts.AIUser
+		ctx := context.Background()
+		_ = t.store.UpsertIssues(ctx, []messages.GitLabIssue{*newIssue})
+		return messages.IssueActionMsg{
+			Action: fmt.Sprintf("created #%d → %s", newIssue.IID, t.opts.AIUser),
+		}
+	})
+}
+
+// splitIssueDraft parses the editor's saved file into (title, body).
+// The first '# ' heading line is the title; remaining lines are the
+// body, with leading/trailing whitespace stripped.
+func splitIssueDraft(s string) (title, body string, ok bool) {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if strings.HasPrefix(ln, "# ") {
+			title = strings.TrimSpace(strings.TrimPrefix(ln, "# "))
+			body = strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+			if title == "" || title == "Title here" {
+				return "", "", false
+			}
+			return title, body, true
+		}
+	}
+	return "", "", false
+}
+
 func (t *IssuesTab) commentOnIssue(iid int64) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		editor = "vim"
+		editor = defaultEditor
 	}
 
 	tmpFile := fmt.Sprintf("/tmp/lazydev-comment-%d.md", iid)

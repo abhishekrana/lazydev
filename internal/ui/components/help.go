@@ -96,10 +96,23 @@ func (h HelpOverlay) View() string {
 			},
 		},
 		{
-			title: "Query",
+			title: "Query (DSL on /)",
 			keys: [][2]string{
-				{"/", "Filter sidebar (substring) — Query DSL coming"},
-				{"r", "Refresh now (incremental sync)"},
+				{"/", "Query line: assignee:@me label:bug state:open …"},
+				{"r", "Refresh now (sync nudge)"},
+				{"1–9", "Recall saved view (mine, ai-queue, …)"},
+				{":save <n> <e>", "Save current view"},
+			},
+		},
+		{
+			title: "Select & export",
+			keys: [][2]string{
+				{"Space", "Mark current item"},
+				{"v", "Visual range (toggle)"},
+				{"Esc", "Clear marks"},
+				{"y", "Copy marked → clipboard (OSC52)"},
+				{"Y", "Write marked → /tmp/lazydev-ctx-*.md"},
+				{"X", "Pipe marked → llm_command (claude -p)"},
 			},
 		},
 		{
@@ -109,6 +122,8 @@ func (h HelpOverlay) View() string {
 				{"s", "Close / reopen"},
 				{"c", "Comment (opens $EDITOR)"},
 				{"a", "Assign to self"},
+				{"T", "Toggle assignee self ↔ ai_user"},
+				{"N", "Quick-create assigned to ai_user"},
 				{"o", "Open in browser"},
 			},
 		},
@@ -119,6 +134,7 @@ func (h HelpOverlay) View() string {
 				{"R", "Review in neovim (DiffviewOpen)"},
 				{"m", "Merge (with confirmation)"},
 				{"A", "Approve"},
+				{"T", "Toggle assignee self ↔ ai_user"},
 				{"s", "Close / reopen"},
 				{"c", "Comment (opens $EDITOR)"},
 				{"o", "Open in browser"},

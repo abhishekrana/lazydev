@@ -93,6 +93,21 @@ func NewClient(url, token, project string, additionalUsers []string) (*Client, e
 	return c, nil
 }
 
+// UserIDFor returns the GitLab user ID for a tracked username, if any.
+// Used by the AI-handoff flow (N/T keys) to resolve cfg.GitLab.AIUser
+// to the numeric ID required by GitLab's assign endpoints.
+func (c *Client) UserIDFor(username string) (int64, bool) {
+	if username == "" {
+		return 0, false
+	}
+	for i, u := range c.Usernames {
+		if u == username && i < len(c.UserIDs) {
+			return c.UserIDs[i], true
+		}
+	}
+	return 0, false
+}
+
 // glabConfig represents the glab CLI config structure.
 type glabConfig struct {
 	Host  string                    `yaml:"host"`
