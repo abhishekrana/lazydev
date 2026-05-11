@@ -21,41 +21,22 @@ func main() {
 	}
 	defer state.Close()
 
-	// Build available tabs.
-	var tabModels []ui.TabModel
-
-	if state.DockerClient != nil {
-		tabModels = append(tabModels, tabs.NewDockerTab(state.DockerClient, state.StreamMgr))
+	if state.GitLabClient == nil {
+		fmt.Fprintln(os.Stderr, "Error: GitLab is not configured. Set GITLAB_TOKEN or configure ~/.config/lazydev/config.yaml.")
+		for _, w := range state.Warnings {
+			fmt.Fprintf(os.Stderr, "  %s\n", w)
+		}
+		os.Exit(1)
 	}
 
-	if state.KubeClient != nil {
-		tabModels = append(tabModels, tabs.NewKubeTab(state.KubeClient, state.StreamMgr))
+	refreshS := cfg.GitLab.RefreshIntervalS
+	tabModels := []ui.TabModel{
+		tabs.NewIssuesTab(state.GitLabClient, refreshS),
+		tabs.NewMRsTab(state.GitLabClient, refreshS),
 	}
 
-	// All Logs tab.
-	tabModels = append(tabModels, tabs.NewLogsTab())
-
-	// Dashboard tab.
-	tabModels = append(tabModels, tabs.NewDashboardTab(state.DockerClient, state.KubeClient))
-
-	// GitLab tabs.
-	if state.GitLabClient != nil {
-		refreshS := cfg.GitLab.RefreshIntervalS
-		tabModels = append(tabModels,
-			tabs.NewIssuesTab(state.GitLabClient, refreshS),
-			tabs.NewMRsTab(state.GitLabClient, refreshS),
-			tabs.NewPipelinesTab(state.GitLabClient, refreshS),
-		)
-	}
-
-	// Print warnings for backends that failed to connect.
 	for _, w := range state.Warnings {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
-	}
-
-	if len(tabModels) <= 1 {
-		fmt.Fprintln(os.Stderr, "Error: No backends available. Ensure Docker is running, kubeconfig exists, or GitLab is configured.")
-		os.Exit(1)
 	}
 
 	root := ui.NewRootModel(tabModels)

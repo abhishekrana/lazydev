@@ -11,13 +11,8 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// SidebarItem represents an item in the sidebar.
-type SidebarItem struct {
-	ID    string
-	Name  string
-	State messages.ContainerState
-	Group string
-}
+// SidebarItem is re-exported from messages for callers' convenience.
+type SidebarItem = messages.SidebarItem
 
 // displayRow represents a row in the flattened sidebar view.
 type displayRow struct {
@@ -58,23 +53,23 @@ func NewSidebar() Sidebar {
 }
 
 // SetItems updates the sidebar's items.
-func (s *Sidebar) SetItems(containers []messages.Container) {
-	s.items = make([]SidebarItem, len(containers))
+func (s *Sidebar) SetItems(items []messages.SidebarItem) {
+	s.items = make([]SidebarItem, len(items))
 	s.groupItems = make(map[string][]int)
 	s.groups = nil
 
 	groupSeen := make(map[string]bool)
 
-	for i, c := range containers {
-		group := c.Group
+	for i, it := range items {
+		group := it.Group
 		if group == "" {
 			group = "ungrouped"
 		}
 
 		s.items[i] = SidebarItem{
-			ID:    c.ID,
-			Name:  c.Name,
-			State: c.State,
+			ID:    it.ID,
+			Name:  it.Name,
+			State: it.State,
 			Group: group,
 		}
 

@@ -96,55 +96,31 @@ func (h HelpOverlay) View() string {
 			},
 		},
 		{
-			title: "Logs",
+			title: "Query",
 			keys: [][2]string{
-				{"/", "Search logs"},
-				{"f", "Cycle log level filter"},
-				{"w", "Toggle line wrap on/off"},
-				{"y", "Yank current line to clipboard"},
-				{"Y", "Yank all filtered lines to clipboard"},
-				{"e", "Export filtered logs to text file"},
-				{"E", "Export filtered logs to JSON file"},
-				{"o", "Open logs in $EDITOR"},
+				{"/", "Filter sidebar (substring) — Query DSL coming"},
+				{"r", "Refresh now (incremental sync)"},
 			},
 		},
 		{
-			title: "Docker/K8s",
+			title: "Issues",
 			keys: [][2]string{
-				{"r", "Restart container/pod"},
-				{"s", "Stop container"},
-				{"d", "Delete container/pod"},
-				{"D", "Describe / inspect (toggle)"},
-				{"x", "Exec shell"},
-				{"p", "Port forward (K8s)"},
-				{"S", "Scale deployment (K8s)"},
-			},
-		},
-		{
-			title: "GitLab Issues",
-			keys: [][2]string{
-				{"s", "Close / reopen issue"},
+				{"Enter", "Open detail"},
+				{"s", "Close / reopen"},
 				{"c", "Comment (opens $EDITOR)"},
 				{"a", "Assign to self"},
 				{"o", "Open in browser"},
 			},
 		},
 		{
-			title: "GitLab MRs",
+			title: "Merge Requests",
 			keys: [][2]string{
-				{"r", "Review in neovim (DiffviewOpen)"},
+				{"Enter", "Open detail"},
+				{"R", "Review in neovim (DiffviewOpen)"},
 				{"m", "Merge (with confirmation)"},
 				{"A", "Approve"},
 				{"s", "Close / reopen"},
 				{"c", "Comment (opens $EDITOR)"},
-				{"o", "Open in browser"},
-			},
-		},
-		{
-			title: "GitLab Pipelines",
-			keys: [][2]string{
-				{"R", "Retry failed pipeline"},
-				{"C", "Cancel running pipeline"},
 				{"o", "Open in browser"},
 			},
 		},
@@ -179,4 +155,11 @@ func (h HelpOverlay) View() string {
 		Render(b.String())
 
 	return lipgloss.Place(h.width, h.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(s))
 }

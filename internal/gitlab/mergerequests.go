@@ -224,8 +224,7 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(mr.Labels, ", "))
 	}
 	if mr.PipelineStatus != "" {
-		icon := PipelineStatusIcon(mr.PipelineStatus)
-		fmt.Fprintf(&b, "Pipeline:  %s %s\n", icon, mr.PipelineStatus)
+		fmt.Fprintf(&b, "Pipeline:  %s %s\n", pipelineStatusIcon(mr.PipelineStatus), mr.PipelineStatus)
 	}
 	if mr.ChangesCount != "" {
 		fmt.Fprintf(&b, "Changes:   %s files\n", mr.ChangesCount)
@@ -254,4 +253,22 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 	}
 
 	return b.String()
+}
+
+// pipelineStatusIcon returns a single-glyph icon for a pipeline status.
+func pipelineStatusIcon(status string) string {
+	switch status {
+	case "success":
+		return "✓"
+	case "failed":
+		return "✗"
+	case "running", "pending", "created", "preparing", "waiting_for_resource":
+		return "◌"
+	case "canceled", "skipped":
+		return "⊘"
+	case "manual":
+		return "⚙"
+	default:
+		return "•"
+	}
 }

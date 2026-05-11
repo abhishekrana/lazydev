@@ -93,7 +93,7 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		t.issues = nil
-		var containers []messages.Container
+		var containers []messages.SidebarItem
 		seenInSprint := make(map[int64]bool)
 
 		// Current Sprint group: issues belonging to the current iteration.
@@ -452,17 +452,17 @@ func (t *IssuesTab) findSelectedIssue() *messages.GitLabIssue {
 	return nil
 }
 
-func issueToContainer(issue messages.GitLabIssue, group string) messages.Container {
-	state := messages.StateRunning // open = green dot
+func issueToContainer(issue messages.GitLabIssue, group string) messages.SidebarItem {
+	state := messages.StateOpen
 	if issue.State == "closed" {
-		state = messages.StateStopped
+		state = messages.StateClosed
 	}
 	name := fmt.Sprintf("#%d %s", issue.IID, truncate(issue.Title, 40))
 	age := relativeTime(issue.UpdatedAt)
 	if age != "" {
 		name += " " + age
 	}
-	return messages.Container{
+	return messages.SidebarItem{
 		ID:    fmt.Sprintf("%d", issue.IID),
 		Name:  name,
 		State: state,

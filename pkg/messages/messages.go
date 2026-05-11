@@ -4,170 +4,26 @@ import (
 	"time"
 )
 
-// LogLine represents a single log line from any source.
-type LogLine struct {
-	Source   string
-	SourceID string
-	Text     string
-	Level    LogLevel
-	Time     time.Time
+// --- Sidebar generic item ---
+
+// SidebarItem is a generic row in the sidebar. Both Issues and MRs map onto it.
+type SidebarItem struct {
+	ID    string
+	Name  string
+	State ItemState
+	Group string
 }
 
-// LogLevel represents the severity of a log line.
-type LogLevel int
+// ItemState is the colored-icon state used by the sidebar.
+type ItemState int
 
 const (
-	LogLevelUnknown LogLevel = iota
-	LogLevelDebug
-	LogLevelInfo
-	LogLevelWarn
-	LogLevelError
-	LogLevelFatal
+	StateUnknown ItemState = iota
+	StateOpen              // green ●
+	StateClosed            // grey ○
+	StateMerged            // red ✗ (reused color slot, semantics differ for MRs)
+	StateDraft             // yellow ◌
 )
-
-// Container represents a generic container/pod resource.
-type Container struct {
-	ID       string
-	Name     string
-	Status   string
-	State    ContainerState
-	Source   string // "docker" or "kubernetes"
-	Group    string // compose project or k8s namespace
-	Image    string
-	Created  time.Time
-	Restarts int
-}
-
-// ContainerState represents the running state.
-type ContainerState int
-
-const (
-	StateUnknown ContainerState = iota
-	StateRunning
-	StateStopped
-	StateError
-	StatePending
-	StateRestarting
-)
-
-// --- Bubble Tea Messages ---
-
-// ContainerListMsg is sent when a container list is fetched.
-type ContainerListMsg struct {
-	Containers []Container
-	Source     string // "docker" or "kubernetes"
-	Err        error
-}
-
-// LogBatchMsg delivers a batch of log lines to the UI.
-type LogBatchMsg struct {
-	Lines    []LogLine
-	SourceID string
-}
-
-// LogStreamStartedMsg confirms a log stream was started.
-type LogStreamStartedMsg struct {
-	SourceID string
-}
-
-// LogStreamErrorMsg reports a log stream error.
-type LogStreamErrorMsg struct {
-	SourceID string
-	Err      error
-}
-
-// ContainerActionMsg reports the result of a container action.
-type ContainerActionMsg struct {
-	Action string // "restart", "stop", "remove"
-	ID     string
-	Name   string
-	Err    error
-}
-
-// ContainerInspectMsg delivers container inspect/describe data.
-type ContainerInspectMsg struct {
-	ID   string
-	Data string // formatted YAML/JSON
-	Err  error
-}
-
-// ResourceStats holds CPU/memory stats for a container or pod.
-type ResourceStats struct {
-	ID     string
-	Name   string
-	Source string // "docker" or "kubernetes"
-	CPU    string // e.g. "12.5%" or "100m"
-	Memory string // e.g. "45.2 MiB" or "128Mi"
-}
-
-// ResourceStatsMsg delivers stats for multiple resources.
-type ResourceStatsMsg struct {
-	Stats  []ResourceStats
-	Source string
-	Err    error
-}
-
-// DashboardRow represents a single row in the dashboard table.
-type DashboardRow struct {
-	Name     string
-	Type     string // "container" or "pod"
-	Source   string // "docker" or "kubernetes"
-	Group    string // compose project or namespace
-	Status   string
-	State    ContainerState
-	Restarts int
-	CPU      string
-	Memory   string
-}
-
-// ExecFinishedMsg is sent when an exec shell session completes.
-type ExecFinishedMsg struct {
-	Err error
-}
-
-// PortForwardStartedMsg is sent when a port-forward starts.
-type PortForwardStartedMsg struct {
-	Namespace  string
-	Pod        string
-	LocalPort  string
-	RemotePort string
-}
-
-// PortForwardStoppedMsg is sent when a port-forward stops.
-type PortForwardStoppedMsg struct {
-	Pod string
-	Err error
-}
-
-// ScaleMsg reports the result of a scale operation.
-type ScaleMsg struct {
-	Name     string
-	Replicas int
-	Err      error
-}
-
-// LogExportedMsg is sent when logs are exported to a file.
-type LogExportedMsg struct {
-	Path string
-	Err  error
-}
-
-// ClipboardMsg is sent when content is copied to clipboard.
-type ClipboardMsg struct {
-	Lines int
-	Err   error
-}
-
-// DiscoveryResultMsg reports which backends are available.
-type DiscoveryResultMsg struct {
-	DockerAvailable bool
-	DockerHost      string
-	KubeAvailable   bool
-	KubeContext     string
-	GitLabAvailable bool
-	GitLabProject   string
-	Warnings        []string
-}
 
 // --- GitLab data types ---
 
@@ -208,31 +64,6 @@ type GitLabMR struct {
 	UpdatedAt          time.Time
 }
 
-// GitLabPipeline represents a GitLab CI pipeline.
-type GitLabPipeline struct {
-	ID, ProjectID int64
-	Status        string
-	Ref           string
-	SHA           string
-	WebURL        string
-	Duration      float64
-	CreatedAt     time.Time
-	FinishedAt    time.Time
-	MRIid         string // parsed from ref, e.g. "1353" (empty for non-MR pipelines)
-	MRTitle       string // MR title, fetched from bulk open MR list
-	PipelineType  string // "merge", "train", "head" (empty for non-MR pipelines)
-}
-
-// GitLabJob represents a job within a pipeline.
-type GitLabJob struct {
-	ID       int64
-	Name     string
-	Stage    string
-	Status   string
-	Duration float64
-	WebURL   string
-}
-
 // GitLabIssueMR represents a merge request linked to an issue.
 type GitLabIssueMR struct {
 	IID          int64
@@ -249,8 +80,6 @@ type GitLabNote struct {
 	CreatedAt time.Time
 }
 
-// --- GitLab messages ---
-
 // GitLabIteration represents a GitLab iteration (sprint).
 type GitLabIteration struct {
 	ID    int64
@@ -258,6 +87,8 @@ type GitLabIteration struct {
 	Start time.Time
 	Due   time.Time
 }
+
+// --- GitLab messages ---
 
 // IssueListMsg delivers issue lists from GitLab.
 type IssueListMsg struct {
@@ -303,25 +134,37 @@ type MRActionMsg struct {
 	Err    error
 }
 
-// PipelineListMsg delivers pipeline lists from GitLab.
-type PipelineListMsg struct {
-	Pipelines []GitLabPipeline
-	Err       error
+// --- Cache + sync messages ---
+
+// CacheUpdatedMsg signals new cache contents are available for a kind.
+type CacheUpdatedMsg struct {
+	Kind string // "issues" | "mrs"
 }
 
-// PipelineJobsMsg delivers jobs for a pipeline.
-type PipelineJobsMsg struct {
-	PipelineID int64
-	Jobs       []GitLabJob
+// SyncStatusMsg reports the syncer's current state.
+type SyncStatusMsg struct {
+	State      string // "prefetching" | "syncing" | "idle" | "offline"
+	Progress   string // e.g. "120/450"
+	LastSyncAt time.Time
 	Err        error
 }
 
-// JobLogMsg delivers log lines for a pipeline job.
-type JobLogMsg struct {
-	JobID int64
-	Log   string
-	Err   error
+// --- Selection + export messages ---
+
+// SelectionChangedMsg signals the multi-select set changed.
+type SelectionChangedMsg struct {
+	Count int
 }
+
+// ExportDoneMsg reports the result of a context export.
+type ExportDoneMsg struct {
+	Channel string // "clipboard" | "file" | "pipe"
+	Path    string // for "file" channel
+	Items   int
+	Err     error
+}
+
+// --- General UI messages ---
 
 // SwitchTabMsg requests switching to a specific tab.
 type SwitchTabMsg struct {
@@ -354,3 +197,9 @@ type WindowSizeMsg struct {
 
 // TabActivatedMsg is sent to a tab when it becomes the active tab.
 type TabActivatedMsg struct{}
+
+// ExecFinishedMsg is sent when an exec-style external process completes
+// (e.g. the user's $EDITOR finishing a comment draft).
+type ExecFinishedMsg struct {
+	Err error
+}

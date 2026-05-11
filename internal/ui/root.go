@@ -136,32 +136,16 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.switchTab(msg.Tab)
 		}
 		return m, nil
-
-	case messages.DiscoveryResultMsg:
-		ctx := ""
-		if msg.DockerAvailable {
-			ctx += "docker"
-		}
-		if msg.KubeAvailable {
-			if ctx != "" {
-				ctx += " | "
-			}
-			ctx += msg.KubeContext
-		}
-		m.statusBar.Context = ctx
 	}
 
 	// Broadcast data messages to all tabs so each tab receives its own async results.
 	// This is needed because Init() fires Cmds for all tabs, but Update() normally
 	// only routes to the active tab.
 	switch msg.(type) {
-	case messages.LogBatchMsg, messages.ContainerListMsg, messages.ResourceStatsMsg,
-		messages.ContainerActionMsg, messages.ContainerInspectMsg,
-		messages.LogStreamErrorMsg, messages.ExecFinishedMsg, messages.ScaleMsg,
-		messages.LogExportedMsg,
+	case messages.ExecFinishedMsg,
 		messages.IssueListMsg, messages.IssueDetailMsg, messages.IssueActionMsg,
 		messages.MRListMsg, messages.MRDetailMsg, messages.MRActionMsg,
-		messages.PipelineListMsg, messages.PipelineJobsMsg, messages.JobLogMsg:
+		messages.CacheUpdatedMsg, messages.SyncStatusMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
 			var cmd tea.Cmd
@@ -203,24 +187,6 @@ func (m RootModel) executeCommand(cmd string, args []string) tea.Cmd {
 				if strings.EqualFold(tab.Title(), args[0]) {
 					return func() tea.Msg { return messages.SwitchTabMsg{Tab: i} }
 				}
-			}
-		}
-	case "docker":
-		return func() tea.Msg { return messages.SwitchTabMsg{Tab: 0} }
-	case "k8s", "kubernetes":
-		return func() tea.Msg { return messages.SwitchTabMsg{Tab: 1} }
-	case "logs":
-		for i, tab := range m.tabs {
-			if tab.Title() == "All Logs" {
-				idx := i
-				return func() tea.Msg { return messages.SwitchTabMsg{Tab: idx} }
-			}
-		}
-	case "dashboard":
-		for i, tab := range m.tabs {
-			if tab.Title() == "Dashboard" {
-				idx := i
-				return func() tea.Msg { return messages.SwitchTabMsg{Tab: idx} }
 			}
 		}
 	case "help":

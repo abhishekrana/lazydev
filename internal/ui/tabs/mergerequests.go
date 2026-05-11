@@ -85,7 +85,7 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		t.mrs = nil
-		var containers []messages.Container
+		var containers []messages.SidebarItem
 		for _, mr := range msg.Mine {
 			t.mrs = append(t.mrs, mr)
 			containers = append(containers, mrToContainer(mr, "My MRs"))
@@ -432,13 +432,13 @@ func (t *MRsTab) findSelectedMR() *messages.GitLabMR {
 	return nil
 }
 
-func mrToContainer(mr messages.GitLabMR, group string) messages.Container {
-	state := messages.StateRunning
+func mrToContainer(mr messages.GitLabMR, group string) messages.SidebarItem {
+	state := messages.StateOpen
 	switch mr.State {
 	case "merged":
-		state = messages.StateStopped
+		state = messages.StateMerged
 	case "closed":
-		state = messages.StateError
+		state = messages.StateClosed
 	}
 	pipeline := ""
 	switch mr.PipelineStatus {
@@ -454,7 +454,7 @@ func mrToContainer(mr messages.GitLabMR, group string) messages.Container {
 	if age != "" {
 		name += " " + age
 	}
-	return messages.Container{
+	return messages.SidebarItem{
 		ID:    fmt.Sprintf("%d", mr.IID),
 		Name:  name,
 		State: state,
