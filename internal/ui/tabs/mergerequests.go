@@ -1,6 +1,7 @@
 package tabs
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
 	"github.com/abhishek-rana/lazydev/internal/ui"
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
@@ -16,9 +19,11 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// MRsTab displays GitLab merge requests.
+// MRsTab displays GitLab merge requests sourced from the local cache.
 type MRsTab struct {
 	client          *gitlabpkg.Client
+	store           *cachepkg.Store
+	syncer          *cachepkg.Syncer
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
 	modal           components.Modal
@@ -29,26 +34,23 @@ type MRsTab struct {
 	mrs             []messages.GitLabMR
 	notification    string
 	pendingCtrlW    bool
-	refreshS        int
 	fetchSeq        uint64
 	pendingFetch    string
 	needsAutoSelect bool
 }
 
 // NewMRsTab creates a new GitLab Merge Requests tab.
-func NewMRsTab(client *gitlabpkg.Client, refreshS int) *MRsTab {
+func NewMRsTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer) *MRsTab {
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
-	if refreshS <= 0 {
-		refreshS = 30
-	}
 	return &MRsTab{
 		client:       client,
+		store:        store,
+		syncer:       syncer,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
 		modal:        components.NewModal(),
 		focusSidebar: true,
-		refreshS:     refreshS,
 	}
 }
 
@@ -69,7 +71,7 @@ func (t *MRsTab) SetSize(width, height int) {
 }
 
 func (t *MRsTab) Init() tea.Cmd {
-	return tea.Batch(t.fetchMRs(), t.tickRefresh())
+	return t.fetchMRs()
 }
 
 func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
@@ -134,6 +136,9 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		} else {
 			t.notification = msg.Action + " done"
 		}
+		if t.syncer != nil {
+			t.syncer.SyncNow()
+		}
 		return t, t.fetchMRs()
 
 	case messages.ExecFinishedMsg:
@@ -148,8 +153,11 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
-	case mrRefreshTickMsg:
-		return t, tea.Batch(t.fetchMRs(), t.tickRefresh())
+	case messages.CacheUpdatedMsg:
+		if msg.Kind == "mrs" {
+			return t, t.fetchMRs()
+		}
+		return t, nil
 
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
@@ -197,7 +205,10 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 
 		switch s {
 		case "r":
-			t.notification = "Refreshing..."
+			if t.syncer != nil {
+				t.syncer.SyncNow()
+				t.notification = "Refreshing..."
+			}
 			return t, t.fetchMRs()
 		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
@@ -312,18 +323,58 @@ func (t *MRsTab) toggleFocus() {
 	t.detailPane.SetFocused(!t.focusSidebar)
 }
 
+// fetchMRs reads from the local cache and partitions into the
+// existing MRListMsg groups so the Update handler keeps its
+// grouping logic. Sub-millisecond at our data volumes.
 func (t *MRsTab) fetchMRs() tea.Cmd {
 	return func() tea.Msg {
-		mine, review, allOpen, err := t.client.ListMyMRs()
+		ctx := context.Background()
+		all, err := t.store.ListMRs(ctx, cachepkg.Filter{State: "open", Limit: 1000})
+		if err != nil {
+			return messages.MRListMsg{Err: err}
+		}
+		trackedNames := make(map[string]bool, len(t.client.Usernames))
+		for _, u := range t.client.Usernames {
+			trackedNames[u] = true
+		}
+
+		var mine, review, allOpen []messages.GitLabMR
+		seenMine := make(map[int64]bool)
+		seenReview := make(map[int64]bool)
+		for _, mr := range all {
+			if trackedNames[mr.Author] {
+				mine = append(mine, mr)
+				seenMine[mr.IID] = true
+			}
+		}
+		for _, mr := range all {
+			if seenMine[mr.IID] {
+				continue
+			}
+			for _, rv := range mr.Reviewers {
+				if trackedNames[rv] {
+					review = append(review, mr)
+					seenReview[mr.IID] = true
+					break
+				}
+			}
+		}
+		for _, mr := range all {
+			if !seenMine[mr.IID] && !seenReview[mr.IID] {
+				allOpen = append(allOpen, mr)
+			}
+		}
 		return messages.MRListMsg{
 			Mine:            mine,
 			ReviewRequested: review,
 			AllOpen:         allOpen,
-			Err:             err,
 		}
 	}
 }
 
+// selectMR paints from the cache instantly, then refreshes from the
+// live API in parallel. The later API result overwrites the cached
+// paint; both share fetchSeq for staleness rejection.
 func (t *MRsTab) selectMR(id string) tea.Cmd {
 	var iid int64
 	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck,gosec // best effort
@@ -331,10 +382,24 @@ func (t *MRsTab) selectMR(id string) tea.Cmd {
 	t.fetchSeq++
 	seq := t.fetchSeq
 
-	return func() tea.Msg {
+	cacheCmd := func() tea.Msg {
+		ctx := context.Background()
+		cached, notes, err := t.store.GetMR(ctx, iid)
+		if err != nil || cached == nil {
+			return nil
+		}
+		return mrDetailResultMsg{seq: seq, mr: *cached, notes: notes}
+	}
+	apiCmd := func() tea.Msg {
 		mr, notes, err := t.client.GetMR(iid)
+		if err == nil {
+			ctx := context.Background()
+			_ = t.store.UpsertMRs(ctx, []messages.GitLabMR{mr})
+			_ = t.store.UpsertNotes(ctx, "mr", iid, notes)
+		}
 		return mrDetailResultMsg{seq: seq, mr: mr, notes: notes, err: err}
 	}
+	return tea.Batch(cacheCmd, apiCmd)
 }
 
 func (t *MRsTab) approveMR(iid int64) tea.Cmd {
@@ -400,8 +465,6 @@ func (t *MRsTab) reviewInNeovim(mr *messages.GitLabMR) tea.Cmd {
 	})
 }
 
-type mrRefreshTickMsg struct{}
-
 type mrDetailFetchMsg struct{ itemID string }
 
 type mrDetailResultMsg struct {
@@ -409,12 +472,6 @@ type mrDetailResultMsg struct {
 	mr    messages.GitLabMR
 	notes []messages.GitLabNote
 	err   error
-}
-
-func (t *MRsTab) tickRefresh() tea.Cmd {
-	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {
-		return mrRefreshTickMsg{}
-	})
 }
 
 func (t *MRsTab) findSelectedMR() *messages.GitLabMR {

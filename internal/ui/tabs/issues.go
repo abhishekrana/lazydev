@@ -1,6 +1,7 @@
 package tabs
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
 	"github.com/abhishek-rana/lazydev/internal/ui"
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
@@ -16,9 +19,11 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// IssuesTab displays GitLab issues.
+// IssuesTab displays GitLab issues sourced from the local cache.
 type IssuesTab struct {
 	client          *gitlabpkg.Client
+	store           *cachepkg.Store
+	syncer          *cachepkg.Syncer
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
 	modal           components.Modal
@@ -30,27 +35,25 @@ type IssuesTab struct {
 	issues          []messages.GitLabIssue // flat list for lookup
 	notification    string
 	pendingCtrlW    bool
-	refreshS        int
-	fetchSeq        uint64 // incremented on each detail fetch, used to discard stale responses
+	fetchSeq        uint64 // detail-fetch staleness counter
 	pendingFetch    string // sidebar item ID waiting for debounce
 	needsAutoSelect bool
 }
 
-// NewIssuesTab creates a new GitLab Issues tab.
-func NewIssuesTab(client *gitlabpkg.Client, refreshS int) *IssuesTab {
+// NewIssuesTab creates a new GitLab Issues tab. The cache is the
+// source of truth for reads; the syncer is nudged on manual refresh.
+func NewIssuesTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer) *IssuesTab {
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
-	if refreshS <= 0 {
-		refreshS = 30
-	}
 	return &IssuesTab{
 		client:       client,
+		store:        store,
+		syncer:       syncer,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
 		modal:        components.NewModal(),
 		inputModal:   components.NewInputModal(),
 		focusSidebar: true,
-		refreshS:     refreshS,
 	}
 }
 
@@ -72,7 +75,10 @@ func (t *IssuesTab) SetSize(width, height int) {
 }
 
 func (t *IssuesTab) Init() tea.Cmd {
-	return tea.Batch(t.fetchIssues(), t.tickRefresh())
+	// Sidebar populates from the cache before any network call.
+	// The syncer (started by main.go) will emit CacheUpdatedMsg later
+	// to refresh the view as fresh data arrives.
+	return t.fetchIssues()
 }
 
 func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
@@ -174,6 +180,11 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		} else {
 			t.notification = msg.Action + " done"
 		}
+		// Action committed → nudge syncer so the cache reflects the
+		// new state on the next tick.
+		if t.syncer != nil {
+			t.syncer.SyncNow()
+		}
 		return t, t.fetchIssues()
 
 	case messages.ExecFinishedMsg:
@@ -188,8 +199,11 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
-	case issueRefreshTickMsg:
-		return t, tea.Batch(t.fetchIssues(), t.tickRefresh())
+	case messages.CacheUpdatedMsg:
+		if msg.Kind == "issues" {
+			return t, t.fetchIssues()
+		}
+		return t, nil
 
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
@@ -237,7 +251,10 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 
 		switch s {
 		case "r":
-			t.notification = "Refreshing..."
+			if t.syncer != nil {
+				t.syncer.SyncNow()
+				t.notification = "Refreshing..."
+			}
 			return t, t.fetchIssues()
 		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
@@ -344,19 +361,49 @@ func (t *IssuesTab) toggleFocus() {
 	t.detailPane.SetFocused(!t.focusSidebar)
 }
 
+// fetchIssues reads from the local cache and shapes the result into
+// the legacy IssueListMsg (Assigned / Created / Mentioned partition)
+// so the Update handler keeps its existing grouping logic. This call
+// is sub-millisecond at the data volumes we expect.
 func (t *IssuesTab) fetchIssues() tea.Cmd {
 	return func() tea.Msg {
-		assigned, created, mentioned, currentIter, err := t.client.ListMyIssues()
+		ctx := context.Background()
+		all, err := t.store.ListIssues(ctx, cachepkg.Filter{State: "open", Limit: 1000})
+		if err != nil {
+			return messages.IssueListMsg{Err: err}
+		}
+		trackedNames := make(map[string]bool, len(t.client.Usernames))
+		for _, u := range t.client.Usernames {
+			trackedNames[u] = true
+		}
+
+		var assigned, created []messages.GitLabIssue
+		seen := make(map[int64]bool)
+		for _, iss := range all {
+			if trackedNames[iss.Assignee] {
+				assigned = append(assigned, iss)
+				seen[iss.IID] = true
+			}
+		}
+		for _, iss := range all {
+			if seen[iss.IID] {
+				continue
+			}
+			if trackedNames[iss.Author] {
+				created = append(created, iss)
+			}
+		}
 		return messages.IssueListMsg{
-			Assigned:         assigned,
-			Created:          created,
-			Mentioned:        mentioned,
-			CurrentIteration: currentIter,
-			Err:              err,
+			Assigned: assigned,
+			Created:  created,
 		}
 	}
 }
 
+// selectIssue paints from the cache instantly, then refreshes from the
+// live API in parallel. The later API result overwrites the cached
+// paint when it arrives (typically 1–2s later); both share the same
+// fetchSeq so staleness checks reject results from earlier selections.
 func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 	var iid int64
 	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck,gosec // best effort
@@ -364,10 +411,25 @@ func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 	t.fetchSeq++
 	seq := t.fetchSeq
 
-	return func() tea.Msg {
-		issue, notes, relatedMRs, err := t.client.GetIssue(iid)
-		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, relatedMRs: relatedMRs, err: err}
+	cacheCmd := func() tea.Msg {
+		ctx := context.Background()
+		cached, notes, related, err := t.store.GetIssue(ctx, iid)
+		if err != nil || cached == nil {
+			return nil
+		}
+		return issueDetailResultMsg{seq: seq, issue: *cached, notes: notes, relatedMRs: related}
 	}
+	apiCmd := func() tea.Msg {
+		issue, notes, related, err := t.client.GetIssue(iid)
+		if err == nil {
+			ctx := context.Background()
+			_ = t.store.UpsertIssues(ctx, []messages.GitLabIssue{issue})
+			_ = t.store.UpsertNotes(ctx, "issue", iid, notes)
+			_ = t.store.UpsertRelatedMRs(ctx, iid, related)
+		}
+		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, relatedMRs: related, err: err}
+	}
+	return tea.Batch(cacheCmd, apiCmd)
 }
 
 func (t *IssuesTab) closeIssue(iid int64) tea.Cmd {
@@ -415,26 +477,20 @@ func (t *IssuesTab) commentOnIssue(iid int64) tea.Cmd {
 	})
 }
 
-type issueRefreshTickMsg struct{}
-
 // issueDetailFetchMsg is a debounced trigger to fetch issue details.
 type issueDetailFetchMsg struct {
 	itemID string
 }
 
-// issueDetailResultMsg wraps IssueDetailMsg with a sequence number for staleness check.
+// issueDetailResultMsg wraps the cache- or API-sourced detail with a
+// sequence number for staleness check. Two results per click are
+// expected (cache first, API second); both pass the same `seq`.
 type issueDetailResultMsg struct {
 	seq        uint64
 	issue      messages.GitLabIssue
 	notes      []messages.GitLabNote
 	relatedMRs []messages.GitLabIssueMR
 	err        error
-}
-
-func (t *IssuesTab) tickRefresh() tea.Cmd {
-	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {
-		return issueRefreshTickMsg{}
-	})
 }
 
 func (t *IssuesTab) findSelectedIssue() *messages.GitLabIssue {
