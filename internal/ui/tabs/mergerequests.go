@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
+	"github.com/abhishek-rana/lazydev/internal/export"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
 	"github.com/abhishek-rana/lazydev/internal/query"
 	"github.com/abhishek-rana/lazydev/internal/ui"
@@ -25,7 +26,7 @@ type MRsTab struct {
 	client          *gitlabpkg.Client
 	store           *cachepkg.Store
 	syncer          *cachepkg.Syncer
-	aiUser          string
+	opts            *Options
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
 	queryline       components.QueryLine
@@ -44,14 +45,17 @@ type MRsTab struct {
 }
 
 // NewMRsTab creates a new GitLab Merge Requests tab.
-func NewMRsTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer, aiUser string) *MRsTab {
+func NewMRsTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer, opts *Options) *MRsTab {
+	if opts == nil {
+		opts = &Options{}
+	}
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
 	return &MRsTab{
 		client:       client,
 		store:        store,
 		syncer:       syncer,
-		aiUser:       aiUser,
+		opts:         opts,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
 		queryline:    components.NewQueryLine(),
@@ -170,6 +174,21 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		t.notification = "view: " + msg.Name
 		return t, t.fetchMRs()
 
+	case messages.ExportDoneMsg:
+		if msg.Err != nil {
+			t.notification = fmt.Sprintf("%s export failed: %v", msg.Channel, msg.Err)
+			return t, nil
+		}
+		switch msg.Channel {
+		case "clipboard":
+			t.notification = fmt.Sprintf("copied %d items to clipboard", msg.Items)
+		case "file":
+			t.notification = fmt.Sprintf("wrote %d items to %s", msg.Items, msg.Path)
+		case "pipe":
+			t.notification = fmt.Sprintf("piped %d items to %s", msg.Items, t.opts.LLMCommand)
+		}
+		return t, nil
+
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		sidebarWidth := t.width * 25 / 100
@@ -229,6 +248,12 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		case "/":
 			t.queryline.Show()
 			return t, nil
+		case "y":
+			return t, t.exportToClipboard()
+		case "Y":
+			return t, t.exportToFile()
+		case "X":
+			return t, t.exportToLLM()
 		case "r":
 			if t.syncer != nil {
 				t.syncer.SyncNow()
@@ -358,7 +383,7 @@ func (t *MRsTab) fetchMRs() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		env := query.Env{Me: t.client.Username, AI: t.aiUser}
+		env := query.Env{Me: t.client.Username, AI: t.opts.AIUser}
 		expr := query.Parse(t.queryExpr, env)
 
 		// If the user narrowed to issues, return empty here — the
@@ -521,6 +546,89 @@ func (t *MRsTab) reviewInNeovim(mr *messages.GitLabMR) tea.Cmd {
 	return tea.ExecProcess(shell, func(err error) tea.Msg {
 		return messages.ExecFinishedMsg{Err: err}
 	})
+}
+
+// buildExportItems materializes the marked MRs (or the cursor item if
+// none are marked) into ExportItems with notes loaded from the cache.
+func (t *MRsTab) buildExportItems() []export.ExportItem {
+	picks := t.sidebar.MarkedItems()
+	if len(picks) == 0 {
+		if cur, ok := t.sidebar.SelectedItem(); ok {
+			picks = append(picks, cur)
+		}
+	}
+	if len(picks) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	out := make([]export.ExportItem, 0, len(picks))
+	for _, p := range picks {
+		var iid int64
+		fmt.Sscanf(p.ID, "%d", &iid) //nolint:errcheck,gosec // best effort
+		mr, notes, err := t.store.GetMR(ctx, iid)
+		if err != nil || mr == nil {
+			continue
+		}
+		out = append(out, export.ExportItem{
+			Kind:  "mr",
+			MR:    mr,
+			Notes: notes,
+		})
+	}
+	return out
+}
+
+func (t *MRsTab) exportContent(items []export.ExportItem) string {
+	if t.opts.ExportFormat == "markdown" {
+		return export.BuildMarkdown(items)
+	}
+	return export.BuildClaudeXML(items)
+}
+
+func (t *MRsTab) exportToClipboard() tea.Cmd {
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	return func() tea.Msg {
+		if err := export.CopyClipboard(content); err != nil {
+			return messages.ExportDoneMsg{Channel: "clipboard", Items: len(items), Err: err}
+		}
+		return messages.ExportDoneMsg{Channel: "clipboard", Items: len(items)}
+	}
+}
+
+func (t *MRsTab) exportToFile() tea.Cmd {
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	return func() tea.Msg {
+		path, err := export.ToFile("ctx", content, ".md")
+		return messages.ExportDoneMsg{Channel: "file", Path: path, Items: len(items), Err: err}
+	}
+}
+
+func (t *MRsTab) exportToLLM() tea.Cmd {
+	if t.opts.LLMCommand == "" {
+		t.notification = "no llm_command configured"
+		return nil
+	}
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	cmdline := t.opts.LLMCommand
+	return func() tea.Msg {
+		_, err := export.PipeToCommand(cmdline, content)
+		return messages.ExportDoneMsg{Channel: "pipe", Items: len(items), Err: err}
+	}
 }
 
 type mrDetailFetchMsg struct{ itemID string }

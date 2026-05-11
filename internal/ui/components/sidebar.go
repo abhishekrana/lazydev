@@ -37,7 +37,9 @@ type Sidebar struct {
 	width       int
 	height      int
 	focused     bool
-	yOffset     int // screen Y offset (e.g. tab bar height)
+	yOffset     int             // screen Y offset (e.g. tab bar height)
+	marked      map[string]bool // multi-select set, keyed by item.ID
+	visualStart int             // first marked row when in visual range mode (-1 = off)
 }
 
 // NewSidebar creates a new sidebar.
@@ -49,6 +51,59 @@ func NewSidebar() Sidebar {
 		groupItems:  make(map[string][]int),
 		collapsed:   make(map[string]bool),
 		searchInput: ti,
+		marked:      make(map[string]bool),
+		visualStart: -1,
+	}
+}
+
+// MarkedItems returns the currently marked items in display order.
+// Empty when no items are marked.
+func (s Sidebar) MarkedItems() []SidebarItem {
+	if len(s.marked) == 0 {
+		return nil
+	}
+	var out []SidebarItem
+	for _, row := range s.rows {
+		if row.isGroup {
+			continue
+		}
+		if row.itemIdx < 0 || row.itemIdx >= len(s.items) {
+			continue
+		}
+		it := s.items[row.itemIdx]
+		if s.marked[it.ID] {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// MarkedCount returns the number of marked items.
+func (s Sidebar) MarkedCount() int { return len(s.marked) }
+
+// ClearMarks empties the multi-select set.
+func (s *Sidebar) ClearMarks() {
+	s.marked = make(map[string]bool)
+	s.visualStart = -1
+}
+
+// toggleMark flips the mark on the current cursor item.
+func (s *Sidebar) toggleMark() {
+	if s.cursor < 0 || s.cursor >= len(s.rows) {
+		return
+	}
+	row := s.rows[s.cursor]
+	if row.isGroup {
+		return
+	}
+	if row.itemIdx < 0 || row.itemIdx >= len(s.items) {
+		return
+	}
+	id := s.items[row.itemIdx].ID
+	if s.marked[id] {
+		delete(s.marked, id)
+	} else {
+		s.marked[id] = true
 	}
 }
 
@@ -190,16 +245,41 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		switch {
+		case msg.String() == " ":
+			// Space toggles the mark on the current item.
+			s.toggleMark()
+			s.pendingG = false
+			return nil
+		case msg.String() == "esc":
+			s.ClearMarks()
+			s.pendingG = false
+			return nil
 		case key.Matches(msg, theme.Keys.Up):
 			s.pendingG = false
 			if s.cursor > 0 {
 				s.cursor--
+				// Extend selection in visual mode.
+				if s.visualStart >= 0 {
+					s.toggleMark()
+				}
 			}
 		case key.Matches(msg, theme.Keys.Down):
 			s.pendingG = false
 			if s.cursor < len(s.rows)-1 {
 				s.cursor++
+				if s.visualStart >= 0 {
+					s.toggleMark()
+				}
 			}
+		case msg.String() == "v":
+			// Toggle visual range mode anchored at the current row.
+			if s.visualStart >= 0 {
+				s.visualStart = -1
+			} else {
+				s.visualStart = s.cursor
+				s.toggleMark()
+			}
+			return nil
 		case msg.String() == "G":
 			s.cursor = len(s.rows) - 1
 			s.pendingG = false
@@ -311,15 +391,19 @@ func (s Sidebar) View() string {
 			}
 		} else {
 			item := s.items[row.itemIdx]
-			name := truncate(item.Name, s.width-6)
+			markPrefix := "  "
+			if s.marked[item.ID] {
+				markPrefix = "✓ "
+			}
+			name := truncate(item.Name, s.width-8)
 
 			if i == s.cursor && s.focused {
-				// Selected: render plain text with full-row highlight (no separate icon styling).
-				line := fmt.Sprintf("● %s", name)
+				// Selected: render plain text with full-row highlight.
+				line := fmt.Sprintf("%s● %s", markPrefix, name)
 				b.WriteString(theme.SidebarSelectedStyle.Width(s.width).Render(line))
 			} else {
 				icon := theme.StateIcon(int(item.State))
-				line := fmt.Sprintf("%s %s", icon, name)
+				line := fmt.Sprintf("%s%s %s", markPrefix, icon, name)
 				b.WriteString(theme.SidebarItemStyle.Width(s.width).Render(line))
 			}
 		}
