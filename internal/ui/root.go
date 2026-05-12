@@ -170,7 +170,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		messages.IssueListMsg, messages.IssueDetailMsg, messages.IssueActionMsg,
 		messages.MRListMsg, messages.MRDetailMsg, messages.MRActionMsg,
 		messages.CacheUpdatedMsg, messages.SyncStatusMsg,
-		messages.ApplyViewMsg:
+		messages.ApplyViewMsg,
+		messages.ClaudeDispatchMsg, messages.ClaudeSessionsReloadMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
 			var cmd tea.Cmd

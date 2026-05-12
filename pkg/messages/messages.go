@@ -213,3 +213,15 @@ type TabActivatedMsg struct{}
 type ExecFinishedMsg struct {
 	Err error
 }
+
+// ClaudeDispatchMsg reports the outcome of a Claude Code dispatch
+// (interactive tmux split or one-shot `claude -p`). The note is shown
+// in the status bar; on success the sessions tab should reload.
+type ClaudeDispatchMsg struct {
+	Note string
+	Err  error
+}
+
+// ClaudeSessionsReloadMsg requests the Claude tab refresh its session
+// list from .lazydev/sessions.json.
+type ClaudeSessionsReloadMsg struct{}

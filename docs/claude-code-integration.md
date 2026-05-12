@@ -62,12 +62,13 @@ New top-level `claude` block in `~/.config/lazydev/config.yaml`:
 
 ```yaml
 claude:
-  binary: claude                 # CLI binary name (looked up in PATH)
-  spec_dir: docs/specs           # repo-relative spec directory
-  prompts_dir: .lazydev/prompts  # repo-relative prompt-template dir
+  binary: claude # CLI binary name (looked up in PATH)
+  spec_dir: docs/specs # repo-relative spec directory
+  prompts_dir: .lazydev/prompts # repo-relative prompt-template dir
   session_file: .lazydev/sessions.json
-  tmux_session: lazydev-claude   # name of tmux session created when
-                                 # lazydev was started outside tmux
+  tmux_session:
+    lazydev-claude # name of tmux session created when
+    # lazydev was started outside tmux
 ```
 
 All fields have sensible defaults — the user does not need to set any of
@@ -75,12 +76,12 @@ this for the feature to work; `defaults.go` populates them.
 
 ## Keybindings (Issues + MRs)
 
-| Key | Action |
-|---|---|
+| Key | Action                                                                            |
+| --- | --------------------------------------------------------------------------------- |
 | `C` | Interactive Claude Code session: build context → tmux split → `claude <tempfile>` |
-| `P` | One-shot `claude -p`: build context → foreground exec → log result |
+| `P` | One-shot `claude -p`: build context → foreground exec → log result                |
 
-Both keys work on the cursor item *or* the multi-select mark set (same
+Both keys work on the cursor item _or_ the multi-select mark set (same
 semantics as `y/Y/X`). Both require the project's `claude` binary to be
 resolvable; otherwise a notification explains what's missing.
 
@@ -95,6 +96,7 @@ def456     mr       !1024    one     5m ago        done
 ```
 
 Keybindings on a row:
+
 - `Enter` — `tmux attach -t <target>` (interactive only)
 - `o` — open the originating issue/MR in the browser
 - `d` — drop the session record (does not kill the tmux window — leaves

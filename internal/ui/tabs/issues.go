@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
+	"github.com/abhishek-rana/lazydev/internal/claude"
 	"github.com/abhishek-rana/lazydev/internal/export"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
 	"github.com/abhishek-rana/lazydev/internal/query"
@@ -234,6 +235,14 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
+	case messages.ClaudeDispatchMsg:
+		if msg.Err != nil {
+			t.notification = fmt.Sprintf("claude: %v", msg.Err)
+		} else {
+			t.notification = msg.Note
+		}
+		return t, nil
+
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		sidebarWidth := t.width * 25 / 100
@@ -300,6 +309,10 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, t.exportToFile()
 		case "X":
 			return t, t.exportToLLM()
+		case "C":
+			return t, dispatchClaude(t.opts, claude.ModeInteractive, t.buildExportItems())
+		case "P":
+			return t, dispatchClaude(t.opts, claude.ModeOneShot, t.buildExportItems())
 		case "r":
 			if t.syncer != nil {
 				t.syncer.SyncNow()

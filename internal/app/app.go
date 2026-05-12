@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/abhishek-rana/lazydev/internal/cache"
+	"github.com/abhishek-rana/lazydev/internal/claude"
 	"github.com/abhishek-rana/lazydev/internal/config"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
 	"github.com/abhishek-rana/lazydev/internal/views"
@@ -18,6 +20,8 @@ type SharedState struct {
 	Syncer       *cache.Syncer
 	Views        *views.Store
 	Config       *config.Config
+	ClaudeEnv    claude.Env
+	ClaudeStore  *claude.Store
 	Warnings     []string
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -61,6 +65,19 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 		syncInterval := time.Duration(cfg.Cache.SyncIntervalS) * time.Second
 		window := time.Duration(cfg.Cache.PrefetchWindowDays) * 24 * time.Hour
 		state.Syncer = cache.NewSyncer(store, state.GitLabClient, syncInterval, window)
+	}
+
+	state.ClaudeEnv = claude.Discover(cfg.Claude.Binary)
+	if !state.ClaudeEnv.ClaudeAvailable() {
+		state.Warnings = append(state.Warnings,
+			"Claude Code: 'claude' not in PATH — C/P keys and Claude tab will be disabled")
+	}
+	if state.ClaudeEnv.RepoRoot != "" {
+		sessionFile := cfg.Claude.SessionFile
+		if !filepath.IsAbs(sessionFile) {
+			sessionFile = filepath.Join(state.ClaudeEnv.RepoRoot, sessionFile)
+		}
+		state.ClaudeStore = claude.NewStore(sessionFile)
 	}
 
 	return state, nil

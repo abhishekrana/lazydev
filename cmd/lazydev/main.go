@@ -41,10 +41,14 @@ func main() {
 		AIUser:       cfg.GitLab.AIUser,
 		ExportFormat: cfg.Export.Format,
 		LLMCommand:   cfg.Export.LLMCommand,
+		ClaudeEnv:    state.ClaudeEnv,
+		ClaudeStore:  state.ClaudeStore,
+		TmuxSession:  cfg.Claude.TmuxSession,
 	}
 	tabModels := []ui.TabModel{
 		tabs.NewIssuesTab(state.GitLabClient, state.Cache, state.Syncer, opts),
 		tabs.NewMRsTab(state.GitLabClient, state.Cache, state.Syncer, opts),
+		tabs.NewClaudeTab(opts),
 	}
 
 	root := ui.NewRootModel(tabModels, state.Views)

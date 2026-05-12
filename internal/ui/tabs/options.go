@@ -1,5 +1,7 @@
 package tabs
 
+import "github.com/abhishek-rana/lazydev/internal/claude"
+
 // nothingToExport is the user-facing notification for export commands
 // invoked with no marked or cursor item.
 const nothingToExport = "nothing to export"
@@ -23,4 +25,13 @@ type Options struct {
 	// LLMCommand is the shell-style invocation for Ctrl+Enter export
 	// (e.g. "claude -p"). Empty string disables the pipe action.
 	LLMCommand string
+	// ClaudeEnv is the resolved environment (claude+tmux binaries,
+	// repo root). Zero-value when no integration is configured.
+	ClaudeEnv claude.Env
+	// ClaudeStore persists dispatched sessions to disk. Nil when no
+	// repo root could be resolved.
+	ClaudeStore *claude.Store
+	// TmuxSession is the base name for tmux sessions created when
+	// lazydev is running outside tmux.
+	TmuxSession string
 }

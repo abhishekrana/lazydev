@@ -28,6 +28,13 @@ func DefaultConfig() *Config {
 			SidebarWidth: 30,
 			WrapLines:    false,
 		},
+		Claude: ClaudeConfig{
+			Binary:      "claude",
+			SpecDir:     "docs/specs",
+			PromptsDir:  ".lazydev/prompts",
+			SessionFile: ".lazydev/sessions.json",
+			TmuxSession: "lazydev-claude",
+		},
 	}
 }
 

@@ -13,6 +13,25 @@ type Config struct {
 	Cache  CacheConfig  `yaml:"cache"`
 	Export ExportConfig `yaml:"export"`
 	UI     UIConfig     `yaml:"ui"`
+	Claude ClaudeConfig `yaml:"claude"`
+}
+
+// ClaudeConfig configures the Claude Code integration. All fields have
+// sensible defaults; users do not need to set any of them for the
+// integration to work when the `claude` binary is on PATH.
+type ClaudeConfig struct {
+	// Binary is the CLI binary name resolved against PATH.
+	Binary string `yaml:"binary"`
+	// SpecDir is the repo-relative directory where feature specs live.
+	SpecDir string `yaml:"spec_dir"`
+	// PromptsDir is the repo-relative directory for prompt templates.
+	PromptsDir string `yaml:"prompts_dir"`
+	// SessionFile is the repo-relative JSON file persisting dispatched
+	// sessions across lazydev restarts.
+	SessionFile string `yaml:"session_file"`
+	// TmuxSession is the tmux session name created when lazydev is
+	// launched outside of tmux. Per-dispatch unique IDs are appended.
+	TmuxSession string `yaml:"tmux_session"`
 }
 
 // GitLabConfig holds GitLab-specific settings.

@@ -78,7 +78,7 @@ func (q *QueryLine) Update(msg tea.Msg) (escPressed bool, cmd tea.Cmd) {
 		return false, nil
 	}
 	if km, ok := msg.(tea.KeyPressMsg); ok {
-		if km.String() == "esc" {
+		if km.String() == "esc" { //nolint:goconst // idiomatic key name
 			return true, nil
 		}
 	}
