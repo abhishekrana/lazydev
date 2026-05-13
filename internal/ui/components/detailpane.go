@@ -148,11 +148,19 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 			y -= 2
 		}
 		lineIdx := d.offset + y
-		if lineIdx < 0 || lineIdx >= len(d.lines) {
-			return nil
-		}
-		if url := urlOnLine(d.lines[lineIdx]); url != "" {
-			_ = exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
+		// Try the clicked row first, then the immediate neighbours.
+		// Terminals don't always report a perfectly aligned cell row
+		// for a click on styled (underlined) text — the underline can
+		// trick the user into clicking the row below; lipgloss padding
+		// can shift content up. Searching ±1 catches both.
+		for _, idx := range []int{lineIdx, lineIdx - 1, lineIdx + 1} {
+			if idx < 0 || idx >= len(d.lines) {
+				continue
+			}
+			if url := urlOnLine(d.lines[idx]); url != "" {
+				_ = exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
+				return nil
+			}
 		}
 		return nil
 	}
