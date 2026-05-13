@@ -8,36 +8,18 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// linkify wraps text in an OSC 8 hyperlink (clickable in modern
-// terminals) plus inline SGR codes that always-underline the text in
-// Solarized blue. The hover-underline behaviour some terminals
-// default to (Ghostty, GNOME Terminal) isn't enough — we want links
-// visually distinct at a glance.
+// linkify wraps text in an OSC 8 hyperlink so modern terminals render
+// it clickable and apply their own link styling (Ghostty / WezTerm /
+// kitty underline natively). Terminals without OSC 8 drop the escape
+// silently and show plain text. Returns the original text unchanged
+// when url is empty.
 //
-// Returns the original text unchanged when url is empty.
-//
-// Sequence (whitespace added for readability):
-//
-//	ESC ] 8 ; ; URL ESC \           ← OSC 8 open
-//	ESC [ 4 ; 38 ; 2 ; 38 ; 139 ; 210 m  ← SGR underline + SolBlue
-//	TEXT
-//	ESC [ 0 m                       ← SGR reset
-//	ESC ] 8 ; ; ESC \               ← OSC 8 close
-//
-// Terminals without OSC 8 still see the SGR styling — graceful
-// degradation. Terminals without truecolor still see the underline.
+// Sequence: ESC ] 8 ; ; URL ESC \  TEXT  ESC ] 8 ; ; ESC \
 func linkify(text, url string) string {
 	if url == "" {
 		return text
 	}
-	const (
-		oscOpen  = "\x1b]8;;"
-		oscMid   = "\x1b\\"
-		sgrLink  = "\x1b[4;38;2;38;139;210m" // underline + SolBlue (#268BD2)
-		sgrReset = "\x1b[0m"
-		oscClose = "\x1b]8;;\x1b\\"
-	)
-	return oscOpen + url + oscMid + sgrLink + text + sgrReset + oscClose
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
 }
 
 // formatParent renders the Parent row value for the header strip.
