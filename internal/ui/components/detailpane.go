@@ -27,6 +27,7 @@ type DetailPane struct {
 	focused  bool
 	lines    []string
 	pendingG bool
+	yOffset  int // screen Y of the pane's top edge (e.g. tab bar height)
 }
 
 // NewDetailPane creates a new detail pane.
@@ -64,6 +65,13 @@ func (d DetailPane) Width() int {
 // SetFocused sets focus state.
 func (d *DetailPane) SetFocused(focused bool) {
 	d.focused = focused
+}
+
+// SetYOffset records the screen-Y row where the pane's top edge sits.
+// Used by the mouse-click handler to translate screen-relative click
+// coords into pane-local content rows.
+func (d *DetailPane) SetYOffset(y int) {
+	d.yOffset = y
 }
 
 // Focused returns focus state.
@@ -113,9 +121,11 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 		if !mouse.Mod.Contains(tea.ModCtrl) {
 			return nil
 		}
-		y := mouse.Y
+		// Translate screen-Y → pane-local content row:
+		//   subtract the pane's screen offset (tab bar height),
+		//   then subtract the in-pane chrome (title row + blank spacer).
+		y := mouse.Y - d.yOffset
 		if d.title != "" {
-			// Subtract the title row and its spacer.
 			y -= 2
 		}
 		lineIdx := d.offset + y

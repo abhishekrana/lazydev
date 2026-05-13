@@ -80,6 +80,7 @@ func (t *IssuesTab) SetSize(width, height int) {
 	t.sidebar.SetSize(sidebarWidth, height)
 	t.sidebar.SetYOffset(2)
 	t.detailPane.SetSize(rightWidth, height)
+	t.detailPane.SetYOffset(2)
 	t.modal.SetSize(width, height)
 	t.inputModal.SetSize(width, height)
 }
