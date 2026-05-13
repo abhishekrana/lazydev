@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"sync/atomic"
 	"time"
 
 	"github.com/abhishek-rana/lazydev/pkg/messages"
@@ -61,7 +60,6 @@ type Syncer struct {
 	prefetchWindow time.Duration
 	events         chan SyncEvent
 	nowCh          chan struct{}
-	stopped        atomic.Bool
 }
 
 // NewSyncer constructs a Syncer. Call Start() to launch its goroutine
@@ -293,9 +291,6 @@ func (s *Syncer) syncKind(ctx context.Context, kind string) error {
 }
 
 func (s *Syncer) emit(e SyncEvent) {
-	if s.stopped.Load() {
-		return
-	}
 	select {
 	case s.events <- e:
 	default:
