@@ -46,25 +46,33 @@ type labeled struct {
 	k, v string
 }
 
-// formatHeaderStrip renders a block of aligned key/value lines.
-// Empty values are skipped. When width is below narrowWidth, the
-// alignment pad is dropped and rows render as "<key>: <value>".
+// emptyValue is rendered for any header-strip row whose value is
+// empty — keeps the strip's vertical layout consistent across items
+// regardless of which fields are populated.
+const emptyValue = "—"
+
+// formatHeaderStrip renders a block of aligned key/value lines. Empty
+// values render as emptyValue rather than being dropped, so the strip
+// has the same row layout across all items. When width is below
+// narrowWidth, the alignment pad is dropped and rows render as
+// "<key>: <value>".
 func formatHeaderStrip(rows []labeled, width int) string {
 	var b strings.Builder
 	narrow := width > 0 && width < narrowWidth
 	for _, r := range rows {
-		if r.v == "" {
-			continue
+		v := r.v
+		if v == "" {
+			v = emptyValue
 		}
 		if narrow {
 			b.WriteString(r.k)
 			b.WriteString(": ")
-			b.WriteString(r.v)
+			b.WriteString(v)
 			b.WriteByte('\n')
 			continue
 		}
 		b.WriteString(padRight(r.k, labelPad))
-		b.WriteString(r.v)
+		b.WriteString(v)
 		b.WriteByte('\n')
 	}
 	return b.String()

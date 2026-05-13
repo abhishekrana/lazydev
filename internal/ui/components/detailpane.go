@@ -74,7 +74,8 @@ func (d DetailPane) Focused() bool {
 func (d DetailPane) viewableHeight() int {
 	h := d.height
 	if d.title != "" {
-		h--
+		// Title row + the blank spacer beneath it.
+		h -= 2
 	}
 	if h < 1 {
 		h = 1
@@ -114,7 +115,8 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 		}
 		y := mouse.Y
 		if d.title != "" {
-			y--
+			// Subtract the title row and its spacer.
+			y -= 2
 		}
 		lineIdx := d.offset + y
 		if lineIdx >= 0 && lineIdx < len(d.lines) {
@@ -171,12 +173,15 @@ func (d DetailPane) View() string {
 	var b strings.Builder
 
 	if d.title != "" {
-		headerStyle := theme.InactiveHeaderStyle
+		headerStyle := theme.DetailHeaderInactiveStyle
 		if d.focused {
-			headerStyle = theme.ActiveTabStyle
+			headerStyle = theme.DetailHeaderActiveStyle
 		}
 		header := headerStyle.Width(d.width).Render(d.title)
 		b.WriteString(header)
+		b.WriteString("\n")
+		// Spacer line between title and metadata strip.
+		b.WriteString(strings.Repeat(" ", d.width))
 		b.WriteString("\n")
 	}
 
