@@ -50,7 +50,8 @@ func DispatchOneShot(req DispatchRequest) (Result, error) {
 		return Result{}, err
 	}
 	logPath := filepath.Join(logDir, id+".log")
-	logFile, err := os.Create(logPath) //nolint:gosec // path is repo-relative + lazydev-owned
+	// Logs can contain prompt + model output; keep them user-only.
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec // path is repo-relative + lazydev-owned
 	if err != nil {
 		return Result{}, err
 	}
