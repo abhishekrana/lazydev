@@ -13,47 +13,119 @@ All four come from work-items / issue-links APIs that the standard `Issues.GetIs
 
 Out of scope: editing (adding/removing links, changing parent, setting status). Read-only for v1. MRs do not get this — they don't have the work-item hierarchy.
 
-## API surface
+## API surface — performance-first
 
-The Go SDK (`gitlab.com/gitlab-org/api/client-go@v1.46.0`) covers most of what we need:
+**Goal**: every field rendered in the detail pane reads from the local cache. No per-detail-load API calls except as a freshness-refresh, same pattern that exists today for the basic issue fields.
 
-- **Linked items (REST)**: `IssueLinks.ListIssueRelations(pid, iid)` → `[]*IssueRelation` with `LinkType` (`"relates_to"` | `"blocks"` | `"is_blocked_by"`), `IID`, `Title`, `State`, `WebURL`, `Labels`. One-shot call, no pagination concerns at typical sizes.
-- **Work item (GraphQL)**: `WorkItems.GetWorkItem(fullPath, iid)` → `*WorkItem` with `Status` and basic fields. The SDK's built-in GraphQL **template does not currently include the hierarchy widget**, so children / parent come back nil. We have two options:
-  - (A) Use `WorkItems.GetWorkItem` for Status only; do a second raw GraphQL call (via `c.Raw.GraphQL.Do`) with our own template that fetches `hierarchyWidget { parent { … }, children { nodes { … } } }`.
-  - (B) Skip the SDK helper and run a single GraphQL query that fetches Status + Parent + Children in one round trip.
+To populate the cache efficiently we need a **bulk** path, not N+1. The SDK's per-item helpers exist but multiply request count:
 
-Pick **(B)** — one call instead of two, and the SDK's `Status` template is shallow enough that doing it ourselves isn't more work. We get the GraphQL primitive (`c.Raw.GraphQL.Do(query, &result)`) for free.
+| Approach                                                                                         | Calls per sync (N issues)                            | Verdict                                                    |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------- |
+| REST `Issues.GetIssue` + `IssueLinks.ListIssueRelations` + SDK `WorkItems.GetWorkItem` per issue | **3 × N**                                            | Too slow.                                                  |
+| Existing REST `Issues.ListProjectIssues` + GraphQL `WorkItem` per detail load only               | **N + on-demand**                                    | Pushes the cost to first-open of each item; UX still lags. |
+| **GraphQL `project.workItems { … widgets … }` bulk paginated**                                   | **~N/50** (one page = 50 items, all widgets in-line) | What we want.                                              |
 
-GraphQL query shape:
+We pick the GraphQL bulk path. One request per page returns title / state / iid / status / parent / children / linked items for 50 work items at a time. For a typical 200-item prefetch that's **4 GraphQL requests** instead of 600 REST calls.
+
+The query template (project-scoped, paginated via `endCursor`):
 
 ```graphql
-query LazyDevWorkItem($fullPath: ID!, $iid: String!) {
-  namespace(fullPath: $fullPath) {
-    workItem(iid: $iid) {
-      iid
-      state
-      widgets {
-        ... on WorkItemWidgetStatus {
-          status {
-            name
-          }
+query LazyDevWorkItems(
+  $fullPath: ID!
+  $first: Int!
+  $after: String
+  $updatedAfter: Time
+) {
+  project(fullPath: $fullPath) {
+    workItems(
+      first: $first
+      after: $after
+      sort: UPDATED_AT_ASC
+      includeAncestors: true
+      updatedAfter: $updatedAfter
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        iid
+        state
+        title
+        webUrl
+        createdAt
+        updatedAt
+        workItemType {
+          name
         }
-        ... on WorkItemWidgetHierarchy {
-          parent {
-            iid
-            title
-            webUrl
+        author {
+          username
+        }
+        widgets {
+          ... on WorkItemWidgetAssignees {
+            assignees {
+              nodes {
+                username
+              }
+            }
           }
-          children {
-            nodes {
+          ... on WorkItemWidgetLabels {
+            labels {
+              nodes {
+                title
+              }
+            }
+          }
+          ... on WorkItemWidgetMilestone {
+            milestone {
+              title
+            }
+          }
+          ... on WorkItemWidgetIteration {
+            iteration {
+              title
+              startDate
+              dueDate
+            }
+          }
+          ... on WorkItemWidgetStatus {
+            status {
+              name
+            }
+          }
+          ... on WorkItemWidgetHierarchy {
+            parent {
               iid
               title
-              state
-              workItemType {
-                name
-              }
               webUrl
             }
+            children {
+              nodes {
+                iid
+                title
+                state
+                workItemType {
+                  name
+                }
+                webUrl
+              }
+            }
+          }
+          ... on WorkItemWidgetLinkedItems {
+            linkedItems {
+              nodes {
+                linkType # "relates_to" | "blocks" | "is_blocked_by"
+                workItem {
+                  iid
+                  title
+                  state
+                  webUrl
+                }
+              }
+            }
+          }
+          ... on WorkItemWidgetDescription {
+            description
           }
         }
       }
@@ -62,7 +134,21 @@ query LazyDevWorkItem($fullPath: ID!, $iid: String!) {
 }
 ```
 
-**Caveat**: GitLab Premium gates some widgets (hierarchy beyond direct parent/child, status names). The query should degrade gracefully — fields just return null, which we render as `—`.
+This single query replaces **all four** existing data sources for issues (`ListIssuesUpdatedAfter`, per-detail `GetIssue`, the new `ListIssueRelations`, and the new per-detail work-item GraphQL call). Notes/comments and related MRs are still fetched separately — they live on different widgets and grow unboundedly per item, so per-detail-load remains correct for those.
+
+**Pagination**: `first: 50, after: <cursor>`; loop until `pageInfo.hasNextPage == false`. `updatedAfter` mirrors the existing incremental high-water mark.
+
+**Premium-gated widgets**: GraphQL responds with the widget node missing from the array (not an error). All four optional widgets independently degrade to zero values, rendered as `—`.
+
+**Authentication**: same PAT used today. GraphQL endpoint is at the host root (`/api/graphql`), the SDK exposes `c.Raw.GraphQL.Do(query, &result)`.
+
+### Per-detail freshness
+
+Detail load stays cache-first. To stay fresh on actively-viewed items we run a single-item version of the same GraphQL query when the user opens an issue. Same shape, `workItem(iid:)` instead of `workItems(...)` — one round trip refreshes everything except notes (which keep their separate per-detail REST fetch).
+
+### Linked items: REST fallback
+
+If a GitLab instance is on an older version where `WorkItemWidgetLinkedItems` is unavailable, fall back to `IssueLinks.ListIssueRelations` per detail load only. Detect via a one-shot `__schema { types { name } }` introspection check at client init; cache the result on the client. Default-on once confirmed.
 
 ## Caching
 
@@ -102,13 +188,33 @@ Bump `currentSchemaVersion` from `"2"` → `"3"`. The existing `migrate()` alrea
 
 ## Sync strategy
 
-**On every detail load (the existing `selectIssue` flow):**
+**Prefetch** (first run / `task wipe-cache`):
 
-1. Call `c.Raw.IssueLinks.ListIssueRelations(projectID, iid)` → upsert `linked_items` rows.
-2. Run the GraphQL `LazyDevWorkItem` query → upsert `child_items` rows + write `status` / `parent_iid` / `parent_title` onto the issue row.
-3. The detail-pane render reads from the cache (same `selectIssue` → cache-first-then-API pattern that exists today). First paint comes from whatever's already cached; the API result overwrites 1–2s later.
+1. Page through `project.workItems` 50 at a time, ordered by `updatedAt ASC`. Each page is one GraphQL round trip with all widgets in-line.
+2. Inside one DB transaction per page, upsert `issues` (with the new `status` / `parent_iid` / `parent_title` columns and existing assignees/labels/iteration/milestone fields), `linked_items`, and `child_items`. Emit a `SyncEvent` with progress.
+3. MRs use the existing REST path — unchanged.
 
-**On prefetch / incremental sync:** do **not** fetch links/children/status. They're per-item N+1 calls — too expensive for the bulk pass. The header strip's `Status` / `Parent` rows stay as `—` until the user opens the item. That's an acceptable trade for not multiplying request counts by ~5×.
+**Incremental** (background tick, every ~20s):
+
+1. Same paginated GraphQL query, but with `updatedAfter: <maxIssueUpdatedAt - 1m overlap>`. Typically returns ≤50 nodes → one request, fully populates the cache.
+2. Notes are still fetched separately on detail load, as today.
+
+**Detail load** (`selectIssue`):
+
+1. Cache-first paint (everything is already in the cache from sync).
+2. Background API refresh — runs the single-item GraphQL query plus the existing notes / related-MR REST calls. Results overwrite cached rows 1–2s later. Stale `fetchSeq` check stays.
+
+**Why this is a strict win over per-detail enrichment**:
+
+- First open of an item is **instant** (no widget fetch needed; it's already in the cache).
+- Sidebar UI affordances that depend on widgets (e.g. "blocked" indicator) become viable because the data is bulk-available, not "fetch as you scroll."
+- Request count per sync drops from O(N) to O(N/50) — a 200-item project goes from ~600 requests to ~4.
+- One write path. No N+1 inside the detail load.
+
+**Cost** vs. the deferred-fetch design:
+
+- A bulk page is ~10–50 KB JSON for 50 work items with full widgets. ~5× the bytes of the current REST list. Negligible at any reasonable project size.
+- The GraphQL response is more complex to map. Tests and a stable shim type help.
 
 ## UI
 
@@ -159,41 +265,54 @@ Showing a "🚫 blocked" indicator on sidebar rows when an item has open `is_blo
 
 - Add `Status string`, `ParentIID int64`, `ParentTitle string` to `messages.GitLabIssue`.
 - Add `GitLabLinkedItem` and `GitLabChildItem` types alongside `GitLabIssueMR` in `pkg/messages/messages.go`.
-- Schema bump to `"3"`; add the three new columns to `issues`, and the two new tables.
+- Schema bump to `"3"`; add the three new columns to `issues`, and the two new tables (`linked_items`, `child_items`).
+- `migrate()` already drops on version mismatch. Done.
 
-### Step 2 — cache plumbing
+### Step 2 — GraphQL client glue
 
-- Extend `UpsertIssues` to write the three new columns; extend `scanIssue` to read them.
-- New methods: `UpsertLinkedItems(ctx, issueIID, items)`, `UpsertChildItems(ctx, parentIID, items)`, plus list/get helpers.
-- Extend `GetIssue` to return `(*GitLabIssue, []GitLabNote, []GitLabIssueMR, []GitLabLinkedItem, []GitLabChildItem, error)`. Yes, the signature grows. The alternative is a struct return — defer that refactor.
+- New file `internal/gitlab/workitems_graphql.go`.
+- One exported function: `ListWorkItemsBulk(updatedAfter time.Time) iter.Seq2[[]workItem, error]` (or a callback-based variant) that pages through `project.workItems` using the template above, yielding each page until exhausted.
+- One single-item function: `GetWorkItemBulk(iid int64) (workItem, error)` for the per-detail freshness path. Shares the response mapper.
+- Internal `workItem` type matches the GraphQL response shape; an `intoMessages()` method splits it into `(GitLabIssue, []GitLabLinkedItem, []GitLabChildItem)` for the cache write.
+- Use `c.Raw.GraphQL.Do(query, &result, options...)` (already in the SDK).
 
-### Step 3 — GitLab client
+### Step 3 — cache plumbing
 
-- New file `internal/gitlab/workitems.go` with `GetWorkItemDetails(iid)` running the GraphQL query above and returning `(status string, parent *GitLabIssueMR-like, children []GitLabChildItem, err error)`. Project's `fullPath` is already on the client (resolved from the git remote).
-- Extend the existing `(*Client).GetIssue` to also call `IssueLinks.ListIssueRelations` and the new `GetWorkItemDetails`. Return the combined data.
+- Extend `UpsertIssues` to also accept linked + child items so we can write everything in one tx per page.
+- Actually cleaner: new `UpsertWorkItemPage(ctx, []WorkItemPayload)` that internally splits into the three tables. Keep `UpsertIssues` for the MR/sync path that doesn't have widgets.
+- New `ListLinkedItems(ctx, issueIID)` / `ListChildItems(ctx, parentIID)`.
+- Extend `GetIssue` to return the linked + children slices alongside the existing data. Signature change.
 
-### Step 4 — formatter
+### Step 4 — Syncer
 
-- Update `FormatIssueDetail` to render the two new footer sections.
-- New helper `formatLinkedItems` that groups by `LinkType` and prints fixed-order sub-groups.
-- The header-strip `Status` and `Parent` rows already exist; the values just need to be passed in.
+- Replace the issues branch of `prefetch()` and `incremental()` with the new bulk GraphQL paginator. The MR branch is unchanged.
+- `incremental()` uses `MaxIssueUpdatedAt - 1m overlap` as `updatedAfter`. First-run prefetch starts with `now - prefetchWindow`.
+- Emit `SyncEvent{Kind: "issues", Progress: "<page>/<totalEstimated>"}` per page. Total estimate comes from the first page response if available, else we just stream count-so-far.
 
-### Step 5 — tabs
+### Step 5 — Detail-load refresh
 
-- `selectIssue` already does `cacheCmd + apiCmd`; the API command's return type grows to include linked + children. Cache write becomes one transaction that touches `issues`, `notes`, `related_mrs`, `linked_items`, `child_items`. Wrap in a single `tx` for atomicity.
-- `issueDetailResultMsg` gains `linked []messages.GitLabLinkedItem` and `children []messages.GitLabChildItem` fields. The detail handler hands all of it to `FormatIssueDetail`.
+- `selectIssue`'s `apiCmd` switches from `c.Raw.Issues.GetIssue` to `c.GetWorkItemBulk(iid)` for the issue body + widgets, plus the existing notes / related-MR REST calls (parallel, batched).
+- Cache write touches `issues`, `linked_items`, `child_items`, `notes`, `related_mrs` in one tx.
+- `issueDetailResultMsg` carries the linked + children slices. Same `fetchSeq` staleness rules.
 
-### Step 6 — graceful degradation
+### Step 6 — Formatter
 
-GraphQL fields can return null (Premium-gated widgets, deleted parents, etc.). All four data points are independently optional:
+- Wire the header-strip `Status` and `Parent` rows.
+- Two new footer sections: `Child items (N)` and `Linked items (N)`. The linked block sub-groups in fixed order: `Blocked by`, `Blocks`, `Relates to`.
+- `formatLinkedItems(items) string` and `formatChildItems(items) string` helpers in `internal/gitlab/format.go`.
 
-- Linked items REST call failing → log warning, keep going.
-- GraphQL call failing → log warning, keep `status` / `parent` / `children` as their zero values.
-- Don't fail the whole detail load on either.
+### Step 7 — Graceful degradation
 
-### Step 7 — query DSL (defer)
+GraphQL widget arrays can be missing entirely (Free-tier instances, older GitLab versions). Map each `... on WorkItemWidget*` block defensively:
 
-`blocked-by:#X` / `blocks:#X` / `parent:<title>` / `status:to-do` are obvious DSL extensions. None of them are in scope for this plan — they need their own design (especially the `#IID` literal syntax in tokens, which we don't have today). Mention in the follow-up section.
+- Missing widget → zero value for that field. No error.
+- The whole query failing (network, auth, schema mismatch) → emit `SyncEvent{State: "offline", Err: …}` and back off as today.
+
+For the older-GitLab linked-items fallback (Step 2 notes), introspect once at client init; if the linked-items widget isn't in the schema, the `ListWorkItemsBulk` mapper leaves the linked slice empty and we fall back to REST `IssueLinks.ListIssueRelations` per detail load. Old code path stays around precisely for this case.
+
+### Step 8 — Query DSL (defer)
+
+`blocked-by:#X` / `blocks:#X` / `parent:<title>` / `status:to-do` / `child-of:#X` are obvious DSL extensions now that the cache has the data. Out of scope for this plan; tracked in the follow-up section.
 
 ## Test plan
 
@@ -218,11 +337,18 @@ GraphQL fields can return null (Premium-gated widgets, deleted parents, etc.). A
 
 - `pkg/messages/messages.go` — +3 fields on issue, two new types. ~25 lines.
 - `internal/cache/schema.go` — +3 columns, +2 tables, bump version. ~20 lines.
-- `internal/cache/store.go` — new upsert / scan helpers, GetIssue signature change, transactional write. ~120 lines.
-- `internal/gitlab/workitems.go` — new file, raw GraphQL call. ~80 lines.
-- `internal/gitlab/issues.go` — extend `GetIssue` to call the two new APIs. ~30 lines.
-- `internal/gitlab/format.go` / `issues.go` — formatter for both sections, wire Status/Parent rows. ~40 lines.
+- `internal/cache/store.go` — new bulk-upsert helper, list helpers, GetIssue signature change, transactional write. ~150 lines.
+- `internal/gitlab/workitems_graphql.go` — new file: bulk paginated GraphQL list + single-item fetch + response mapper. ~200 lines (biggest single file in the change).
+- `internal/cache/sync.go` — replace REST issues path with the GraphQL bulk paginator; keep MR REST path. ~40 lines net change.
+- `internal/gitlab/issues.go` — adjust `GetIssue` to delegate to `GetWorkItemBulk`, keep notes / related-MR REST calls. ~30 lines.
+- `internal/gitlab/format.go` / `issues.go` — formatter for both new sections, wire Status/Parent rows. ~40 lines.
 - `internal/ui/tabs/issues.go` — message type extension, plumb through. ~25 lines.
-- `internal/cache/store_test.go` — new round-trip test. ~30 lines.
+- `internal/cache/store_test.go` — new round-trip test for linked + children. ~40 lines.
 
-Total: ~370 lines of net additions across 8 files; one schema bump. Single commit, or split into "schema + types" → "client + cache" → "UI" if the diff gets unwieldy mid-implementation.
+Total: ~570 lines of net additions across 9 files; one schema bump. The diff is large enough to be worth splitting into three commits:
+
+1. **Schema + types + cache helpers** — no behavior change yet; old REST sync still works.
+2. **GraphQL client + Syncer switch** — replace the REST issues path. Tested standalone with `task wipe-cache && task run`.
+3. **UI: header rows + footer sections** — render the now-cached data.
+
+This ordering means each commit can be reverted independently if needed, and `git bisect` can pinpoint where any regression entered.
