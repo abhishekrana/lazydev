@@ -36,9 +36,11 @@ type Result struct {
 	Note       string // human-readable summary
 }
 
-// DispatchOneShot runs `claude -p <prompt>` foregrounded. Stdout +
-// stderr are captured to `.lazydev/claude-runs/<id>.log`. Blocks until
-// the child exits.
+// DispatchOneShot starts `claude -p <prompt>` in the background. Stdout
+// + stderr are captured to `.lazydev/claude-runs/<id>.log`. Returns as
+// soon as the child is spawned; a goroutine waits on exit and flips the
+// session record to done/failed. The Claude tab reflects state changes
+// after its next reload (e.g. on tab activation).
 func DispatchOneShot(req DispatchRequest) (Result, error) {
 	if !req.Env.ClaudeAvailable() {
 		return Result{}, ErrNoClaude
@@ -55,7 +57,6 @@ func DispatchOneShot(req DispatchRequest) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer func() { _ = logFile.Close() }()
 
 	sess := Session{
 		ID:         id,
@@ -69,6 +70,7 @@ func DispatchOneShot(req DispatchRequest) (Result, error) {
 		LastSeenAt: now,
 	}
 	if err := req.Store.Add(sess); err != nil {
+		_ = logFile.Close()
 		return Result{}, err
 	}
 
@@ -76,22 +78,33 @@ func DispatchOneShot(req DispatchRequest) (Result, error) {
 	c.Dir = req.Env.RepoRoot
 	c.Stdout = logFile
 	c.Stderr = logFile
-	runErr := c.Run()
-
-	status := StatusDone
-	note := fmt.Sprintf("one-shot %s done → %s", req.Ref, logPath)
-	if runErr != nil {
-		status = StatusFailed
-		note = fmt.Sprintf("one-shot %s failed: %v", req.Ref, runErr)
+	if err := c.Start(); err != nil {
+		_ = logFile.Close()
+		_ = req.Store.Update(id, func(s *Session) {
+			s.Status = StatusFailed
+			s.LastSeenAt = time.Now()
+			s.ExitNote = err.Error()
+		})
+		return Result{}, err
 	}
-	_ = req.Store.Update(id, func(s *Session) {
-		s.Status = status
-		s.LastSeenAt = time.Now()
+
+	go func() {
+		defer func() { _ = logFile.Close() }()
+		runErr := c.Wait()
+		status := StatusDone
+		exitNote := ""
 		if runErr != nil {
-			s.ExitNote = runErr.Error()
+			status = StatusFailed
+			exitNote = runErr.Error()
 		}
-	})
-	sess.Status = status
+		_ = req.Store.Update(id, func(s *Session) {
+			s.Status = status
+			s.LastSeenAt = time.Now()
+			s.ExitNote = exitNote
+		})
+	}()
+
+	note := fmt.Sprintf("one-shot %s running → %s", req.Ref, logPath)
 	return Result{Session: sess, LogPath: logPath, Note: note}, nil
 }
 
