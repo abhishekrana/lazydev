@@ -18,12 +18,15 @@ var urlPattern = regexp.MustCompile(`https?://[^\s)\]>]+`)
 // col on the given line, or "" if the click missed every link.
 //
 // Resolution order:
-//  1. Scan the line for OSC 8 link spans, tracking visible column
-//     position as escapes are passed over. If col falls inside any
-//     span, return that span's URL.
-//  2. Fall back to a plain http(s) URL whose substring contains col
-//     (after stripping ANSI). Catches the URL row and Markdown bodies
-//     where the URL is also the visible text.
+//  1. OSC 8 link span containing col — strict column match. Reference
+//     rows (#NNN / !NNN) only have OSC 8 links and no plain URL, so
+//     clicks off the visible text correctly resolve to nothing.
+//  2. Plain http(s) URL whose column range contains col.
+//  3. If still nothing AND the line contains a plain http(s) URL,
+//     return it. Catches body URLs where the user clicked the visible
+//     URL text but the column math drifted (long URLs, multi-byte
+//     characters surrounding). Reference rows never hit this fallback
+//     because their URLs are hidden inside OSC 8.
 func urlAtColumn(line string, col int) string {
 	if col < 0 {
 		return ""
@@ -31,7 +34,11 @@ func urlAtColumn(line string, col int) string {
 	if url := osc8URLAtColumn(line, col); url != "" {
 		return url
 	}
-	return plainURLAtColumn(line, col)
+	if url := plainURLAtColumn(line, col); url != "" {
+		return url
+	}
+	plain := ansiPattern.ReplaceAllString(line, "")
+	return urlPattern.FindString(plain)
 }
 
 // osc8URLAtColumn walks the line tracking visible-column position as
