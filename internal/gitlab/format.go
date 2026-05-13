@@ -8,24 +8,64 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
+// linkify wraps text in an OSC 8 hyperlink escape sequence so modern
+// terminals render it underlined, clickable, with the URL in a hover
+// tooltip. Terminals that don't recognize OSC 8 silently drop the
+// escape and show the plain text. Returns the original text unchanged
+// when url is empty.
+//
+// Sequence: ESC ] 8 ; ; URL ESC \  TEXT  ESC ] 8 ; ; ESC \
+func linkify(text, url string) string {
+	if url == "" {
+		return text
+	}
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+}
+
 // formatParent renders the Parent row value for the header strip.
 // Returns "" when the issue has no parent so the strip helper renders
-// the placeholder.
-func formatParent(iid int64, title string) string {
+// the placeholder. siblingURL is any issue/work-item URL in the same
+// project — we substitute the IID to derive the parent's URL, which
+// avoids plumbing a separate ParentWebURL field through cache + GQL.
+func formatParent(iid int64, title, siblingURL string) string {
 	if iid == 0 && title == "" {
 		return ""
 	}
-	if iid == 0 {
-		return title
+	var text string
+	switch {
+	case iid == 0:
+		text = title
+	case title == "":
+		text = fmt.Sprintf("#%d", iid)
+	default:
+		text = fmt.Sprintf("#%d %s", iid, title)
 	}
-	if title == "" {
-		return fmt.Sprintf("#%d", iid)
+	return linkify(text, parentURL(siblingURL, iid))
+}
+
+// parentURL derives the parent's URL from a sibling's URL by swapping
+// the trailing IID. Returns "" if siblingURL doesn't end in a numeric
+// IID we can replace.
+func parentURL(siblingURL string, parentIID int64) string {
+	if siblingURL == "" || parentIID == 0 {
+		return ""
 	}
-	return fmt.Sprintf("#%d %s", iid, title)
+	idx := strings.LastIndex(siblingURL, "/")
+	if idx < 0 || idx == len(siblingURL)-1 {
+		return ""
+	}
+	tail := siblingURL[idx+1:]
+	for _, r := range tail {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return siblingURL[:idx+1] + fmt.Sprintf("%d", parentIID)
 }
 
 // formatChildItems renders the "Child items (N)" footer block.
-// Each child is `<glyph> #<iid> <title> [<type>]` aligned by glyph.
+// Each child is `<glyph> #<iid> <title> [<type>]` aligned by glyph,
+// wrapped in an OSC 8 hyperlink pointing at the child's WebURL.
 func formatChildItems(items []messages.GitLabChildItem) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Child items (%d)\n", len(items))
@@ -35,7 +75,8 @@ func formatChildItems(items []messages.GitLabChildItem) string {
 		if c.ItemType != "" {
 			typeSuffix = " [" + c.ItemType + "]"
 		}
-		fmt.Fprintf(&b, "  %s #%d %s%s\n", glyph, c.IID, c.Title, typeSuffix)
+		row := fmt.Sprintf("%s #%d %s%s", glyph, c.IID, c.Title, typeSuffix)
+		fmt.Fprintf(&b, "  %s\n", linkify(row, c.WebURL))
 	}
 	return b.String()
 }
@@ -53,6 +94,7 @@ var linkedGroupOrder = []struct {
 
 // formatLinkedItems renders the "Linked items (N)" footer block,
 // grouped by relation type in fixed order. Empty groups are skipped.
+// Each link line is wrapped in an OSC 8 hyperlink to the linked item.
 func formatLinkedItems(items []messages.GitLabLinkedItem) string {
 	groups := make(map[string][]messages.GitLabLinkedItem)
 	for _, it := range items {
@@ -68,7 +110,8 @@ func formatLinkedItems(items []messages.GitLabLinkedItem) string {
 		fmt.Fprintf(&b, "  %s\n", g.label)
 		for _, it := range set {
 			glyph := stateGlyph(it.State)
-			fmt.Fprintf(&b, "    %s #%d %s  [%s]\n", glyph, it.IID, it.Title, it.State)
+			row := fmt.Sprintf("%s #%d %s  [%s]", glyph, it.IID, it.Title, it.State)
+			fmt.Fprintf(&b, "    %s\n", linkify(row, it.WebURL))
 		}
 	}
 	return b.String()

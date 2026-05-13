@@ -287,13 +287,13 @@ func FormatIssueDetail(
 		{"Status", issue.Status},
 		{"Assignees", strings.Join(issue.Assignees, ", ")},
 		{"Labels", strings.Join(issue.Labels, ", ")},
-		{"Parent", formatParent(issue.ParentIID, issue.ParentTitle)},
+		{"Parent", formatParent(issue.ParentIID, issue.ParentTitle, issue.WebURL)},
 		{"Milestone", issue.Milestone},
 		{"Iteration", iter},
 		{"Author", issue.Author},
 		{"Created", formatDateWithAge(issue.CreatedAt)},
 		{"Updated", formatDateWithAge(issue.UpdatedAt)},
-		{"URL", issue.WebURL},
+		{"URL", linkify(issue.WebURL, issue.WebURL)},
 	}
 	b.WriteString(formatHeaderStrip(rows, width))
 
@@ -310,7 +310,8 @@ func FormatIssueDetail(
 		fmt.Fprintf(&b, "Related MRs (%d)\n", len(relatedMRs))
 		for _, mr := range relatedMRs {
 			icon := stateGlyph(mr.State)
-			fmt.Fprintf(&b, "  %s !%d %s  [%s]\n", icon, mr.IID, mr.Title, mr.State)
+			row := fmt.Sprintf("%s !%d %s  [%s]", icon, mr.IID, mr.Title, mr.State)
+			fmt.Fprintf(&b, "  %s\n", linkify(row, mr.WebURL))
 			if mr.SourceBranch != "" {
 				fmt.Fprintf(&b, "      %s\n", mr.SourceBranch)
 			}

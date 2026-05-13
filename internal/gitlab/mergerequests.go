@@ -239,7 +239,7 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 		{"Author", mr.Author},
 		{"Created", formatDateWithAge(mr.CreatedAt)},
 		{"Updated", formatDateWithAge(mr.UpdatedAt)},
-		{"URL", mr.WebURL},
+		{"URL", linkify(mr.WebURL, mr.WebURL)},
 	}
 	b.WriteString(formatHeaderStrip(rows, width))
 
