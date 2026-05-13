@@ -245,61 +245,51 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 	markdownWidth = width
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "#%d %s [%s]\n", issue.IID, issue.Title, issue.State)
-	b.WriteString(strings.Repeat("─", 60) + "\n")
-
-	if issue.Assignee != "" {
-		fmt.Fprintf(&b, "Assignee:  %s\n", issue.Assignee)
+	iter := issue.Iteration
+	if iter != "" && issue.IterationDates != "" {
+		iter += "  (" + issue.IterationDates + ")"
 	}
-	fmt.Fprintf(&b, "Author:    %s\n", issue.Author)
-	if len(issue.Labels) > 0 {
-		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(issue.Labels, ", "))
+	rows := []labeled{
+		{"Assignees", issue.Assignee},
+		{"Labels", strings.Join(issue.Labels, ", ")},
+		{"Milestone", issue.Milestone},
+		{"Iteration", iter},
+		{"Author", issue.Author},
+		{"Updated", issue.UpdatedAt.Format("2006-01-02 15:04")},
+		{"URL", issue.WebURL},
 	}
-	if issue.Milestone != "" {
-		fmt.Fprintf(&b, "Milestone: %s\n", issue.Milestone)
-	}
-	if issue.Iteration != "" {
-		iter := issue.Iteration
-		if issue.IterationDates != "" {
-			iter += " (" + issue.IterationDates + ")"
-		}
-		fmt.Fprintf(&b, "Iteration: %s\n", iter)
-	}
-	fmt.Fprintf(&b, "Created:   %s\n", issue.CreatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "Updated:   %s\n", issue.UpdatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "URL:       %s\n", issue.WebURL)
-
-	if len(relatedMRs) > 0 {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString("MERGE REQUESTS\n")
-		for _, mr := range relatedMRs {
-			stateIcon := "●"
-			switch mr.State {
-			case "merged":
-				stateIcon = "✓"
-			case "closed":
-				stateIcon = "✗"
-			}
-			fmt.Fprintf(&b, "  %s !%d %s [%s]\n", stateIcon, mr.IID, mr.Title, mr.State)
-			fmt.Fprintf(&b, "    %s\n", mr.SourceBranch)
-		}
-	}
+	b.WriteString(formatHeaderStrip(rows, width))
 
 	baseURL := projectBaseURL(issue.WebURL)
 	hostURL := gitlabHostURL(issue.WebURL)
 
 	if issue.Description != "" {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
+		b.WriteString("\n" + rule(width) + "\n")
 		b.WriteString(renderMarkdown(issue.Description, baseURL, hostURL, issue.ProjectID))
 	}
 
+	if len(relatedMRs) > 0 {
+		b.WriteString("\n" + rule(width) + "\n")
+		fmt.Fprintf(&b, "Related MRs (%d)\n", len(relatedMRs))
+		for _, mr := range relatedMRs {
+			icon := stateGlyph(mr.State)
+			fmt.Fprintf(&b, "  %s !%d %s  [%s]\n", icon, mr.IID, mr.Title, mr.State)
+			if mr.SourceBranch != "" {
+				fmt.Fprintf(&b, "      %s\n", mr.SourceBranch)
+			}
+		}
+	}
+
 	if len(notes) > 0 {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString("COMMENTS\n")
-		b.WriteString(strings.Repeat("─", 60) + "\n")
-		for _, note := range notes {
-			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body, baseURL, hostURL, issue.ProjectID))
+		b.WriteString("\n" + rule(width) + "\n")
+		fmt.Fprintf(&b, "Comments (%d)\n", len(notes))
+		for i, note := range notes {
+			if i > 0 {
+				b.WriteString("\n" + commentSep() + "\n")
+			}
+			fmt.Fprintf(&b, "\n@%s  %s\n\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
+			b.WriteString(strings.TrimRight(renderMarkdown(note.Body, baseURL, hostURL, issue.ProjectID), "\n"))
+			b.WriteByte('\n')
 		}
 	}
 

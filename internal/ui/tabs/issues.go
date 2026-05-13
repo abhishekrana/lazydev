@@ -181,7 +181,8 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes, msg.relatedMRs, t.detailPane.Width())
-		t.detailPane.SetContent(fmt.Sprintf("#%d %s", msg.issue.IID, msg.issue.Title), detail)
+		title := gitlabpkg.FormatIssueTitle(msg.issue)
+		t.detailPane.SetContent(title, detail)
 		return t, nil
 
 	case messages.IssueActionMsg:

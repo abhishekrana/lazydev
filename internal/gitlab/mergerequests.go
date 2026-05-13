@@ -217,46 +217,46 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 	markdownWidth = width
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "!%d %s [%s]\n", mr.IID, mr.Title, mr.State)
-	b.WriteString(strings.Repeat("─", 60) + "\n")
-
-	fmt.Fprintf(&b, "Branch:    %s → %s\n", mr.SourceBranch, mr.TargetBranch)
-	fmt.Fprintf(&b, "Author:    %s\n", mr.Author)
-	if mr.Assignee != "" {
-		fmt.Fprintf(&b, "Assignee:  %s\n", mr.Assignee)
-	}
-	if len(mr.Reviewers) > 0 {
-		fmt.Fprintf(&b, "Reviewers: %s\n", strings.Join(mr.Reviewers, ", "))
-	}
-	if len(mr.Labels) > 0 {
-		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(mr.Labels, ", "))
-	}
+	var pipeline string
 	if mr.PipelineStatus != "" {
-		fmt.Fprintf(&b, "Pipeline:  %s %s\n", pipelineStatusIcon(mr.PipelineStatus), mr.PipelineStatus)
+		pipeline = pipelineStatusIcon(mr.PipelineStatus) + " " + mr.PipelineStatus
 	}
+	var changes string
 	if mr.ChangesCount != "" {
-		fmt.Fprintf(&b, "Changes:   %s files\n", mr.ChangesCount)
+		changes = mr.ChangesCount + " files"
 	}
-	fmt.Fprintf(&b, "Created:   %s\n", mr.CreatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "Updated:   %s\n", mr.UpdatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "URL:       %s\n", mr.WebURL)
+	rows := []labeled{
+		{"Assignee", mr.Assignee},
+		{"Reviewers", strings.Join(mr.Reviewers, ", ")},
+		{"Labels", strings.Join(mr.Labels, ", ")},
+		{"Source", mr.SourceBranch},
+		{"Target", mr.TargetBranch},
+		{"Pipeline", pipeline},
+		{"Changes", changes},
+		{"Author", mr.Author},
+		{"Updated", mr.UpdatedAt.Format("2006-01-02 15:04")},
+		{"URL", mr.WebURL},
+	}
+	b.WriteString(formatHeaderStrip(rows, width))
 
 	baseURL := projectBaseURL(mr.WebURL)
 	hostURL := gitlabHostURL(mr.WebURL)
 
 	if mr.Description != "" {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
+		b.WriteString("\n" + rule(width) + "\n")
 		b.WriteString(renderMarkdown(mr.Description, baseURL, hostURL, mr.ProjectID))
 	}
 
 	if len(notes) > 0 {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString("DISCUSSION\n")
-		b.WriteString(strings.Repeat("─", 60) + "\n")
-		for _, note := range notes {
-			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body, baseURL, hostURL, mr.ProjectID))
-			b.WriteString("\n")
+		b.WriteString("\n" + rule(width) + "\n")
+		fmt.Fprintf(&b, "Discussion (%d)\n", len(notes))
+		for i, note := range notes {
+			if i > 0 {
+				b.WriteString("\n" + commentSep() + "\n")
+			}
+			fmt.Fprintf(&b, "\n@%s  %s\n\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
+			b.WriteString(strings.TrimRight(renderMarkdown(note.Body, baseURL, hostURL, mr.ProjectID), "\n"))
+			b.WriteByte('\n')
 		}
 	}
 

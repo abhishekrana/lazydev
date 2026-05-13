@@ -138,7 +138,8 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		detail := gitlabpkg.FormatMRDetail(msg.mr, msg.notes, t.detailPane.Width())
-		t.detailPane.SetContent(fmt.Sprintf("!%d %s", msg.mr.IID, msg.mr.Title), detail)
+		title := gitlabpkg.FormatMRTitle(msg.mr)
+		t.detailPane.SetContent(title, detail)
 		return t, nil
 
 	case messages.MRActionMsg:

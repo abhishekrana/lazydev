@@ -1,0 +1,106 @@
+package gitlab
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/abhishek-rana/lazydev/pkg/messages"
+)
+
+// FormatIssueTitle is the single-line title rendered in the detail
+// pane's header row above the metadata strip.
+func FormatIssueTitle(issue messages.GitLabIssue) string {
+	return fmt.Sprintf("#%d  %s %s  ·  %s",
+		issue.IID, stateGlyph(issue.State), issue.State, issue.Title)
+}
+
+// FormatMRTitle is the MR equivalent of FormatIssueTitle.
+func FormatMRTitle(mr messages.GitLabMR) string {
+	return fmt.Sprintf("!%d  %s %s  ·  %s",
+		mr.IID, stateGlyph(mr.State), mr.State, mr.Title)
+}
+
+const (
+	// labelPad is the column width used to align metadata keys in the
+	// header strip (e.g. "Assignees   …", "Iteration   …").
+	labelPad = 12
+	// narrowWidth is the threshold below which the header strip falls
+	// back to "<key>: <value>" without padding, to stay readable on
+	// 80-col-ish terminals.
+	narrowWidth = 60
+	// ruleWidth caps the horizontal-rule length so wide terminals don't
+	// get unreadable dash bars.
+	ruleWidth = 80
+)
+
+// labeled is one key/value row in the header strip. Rows whose value
+// is empty are dropped by formatHeaderStrip rather than rendered as
+// "None" — matches `gh issue view` style.
+type labeled struct {
+	k, v string
+}
+
+// formatHeaderStrip renders a block of aligned key/value lines.
+// Empty values are skipped. When width is below narrowWidth, the
+// alignment pad is dropped and rows render as "<key>: <value>".
+func formatHeaderStrip(rows []labeled, width int) string {
+	var b strings.Builder
+	narrow := width > 0 && width < narrowWidth
+	for _, r := range rows {
+		if r.v == "" {
+			continue
+		}
+		if narrow {
+			b.WriteString(r.k)
+			b.WriteString(": ")
+			b.WriteString(r.v)
+			b.WriteByte('\n')
+			continue
+		}
+		b.WriteString(padRight(r.k, labelPad))
+		b.WriteString(r.v)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// rule returns a horizontal rule sized to width, capped at ruleWidth.
+func rule(width int) string {
+	w := width
+	if w <= 0 || w > ruleWidth {
+		w = ruleWidth
+	}
+	return strings.Repeat("─", w)
+}
+
+// commentSep is the thin divider between consecutive comments inside
+// the Comments / Discussion block — lighter than `rule` so it reads as
+// a subsection break rather than a major boundary.
+func commentSep() string {
+	return strings.Repeat("·", 40)
+}
+
+// stateGlyph returns a single-glyph indicator for issue / MR state.
+// `opened` is the GitLab API spelling; we also accept `open` for
+// caller convenience.
+func stateGlyph(state string) string {
+	switch state {
+	case "opened", "open":
+		return "●"
+	case "closed":
+		return "✗"
+	case "merged":
+		return "✓"
+	case "locked":
+		return "⊘"
+	default:
+		return "•"
+	}
+}
+
+func padRight(s string, w int) string {
+	if len(s) >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-len(s))
+}
