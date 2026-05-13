@@ -108,6 +108,13 @@ func (s *Syncer) run(ctx context.Context) {
 	// from MaxIssueUpdatedAt / MaxMRUpdatedAt. `rm cache.db` is the
 	// supported way to force a fresh prefetch (or wait for a schema
 	// bump in migrate()).
+	//
+	// Partial-prefetch case: if a previous run got issues into the cache
+	// but failed before MRs, maxIss > 0 and maxMR == 0 on this start. We
+	// skip prefetch (predicate is "both empty"), but syncKind("mrs")
+	// then sees a zero anchor and pulls every MR — which is the right
+	// thing. So the empty-cache predicate is a load-bearing optimisation,
+	// not a correctness guard.
 	maxIss, _ := s.store.MaxIssueUpdatedAt(ctx)
 	maxMR, _ := s.store.MaxMRUpdatedAt(ctx)
 	if maxIss.IsZero() && maxMR.IsZero() {
