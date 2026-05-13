@@ -4,7 +4,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -14,124 +13,23 @@ import (
 // urlPattern matches http/https URLs in plain text (after ANSI stripping).
 var urlPattern = regexp.MustCompile(`https?://[^\s)\]>]+`)
 
-// urlAtColumn returns the URL the user clicked on at pane-local column
-// col on the given line, or "" if the click missed every link.
-//
-// Resolution order:
-//  1. OSC 8 link span containing col — strict column match. Reference
-//     rows (#NNN / !NNN) only have OSC 8 links and no plain URL, so
-//     clicks off the visible text correctly resolve to nothing.
-//  2. Plain http(s) URL whose column range contains col.
-//  3. If still nothing AND the line contains a plain http(s) URL,
-//     return it. Catches body URLs where the user clicked the visible
-//     URL text but the column math drifted (long URLs, multi-byte
-//     characters surrounding). Reference rows never hit this fallback
-//     because their URLs are hidden inside OSC 8.
-func urlAtColumn(line string, col int) string {
-	if col < 0 {
-		return ""
-	}
-	if url := osc8URLAtColumn(line, col); url != "" {
-		return url
-	}
-	if url := plainURLAtColumn(line, col); url != "" {
-		return url
+// osc8Pattern captures the URL from an OSC 8 opener (ESC ] 8 ; ; URL
+// followed by either ESC \ or BEL). Reference rows (#NNN / !NNN) wrap
+// their IID in OSC 8; this is how the click handler resolves them
+// since the URL itself never appears in the visible line text.
+var osc8Pattern = regexp.MustCompile(`\x1b\]8;;([^\x1b\x07]+)(?:\x1b\\|\x07)`)
+
+// urlOnLine returns the first URL on the line — OSC 8-wrapped if
+// present, otherwise a plain http(s) URL in the visible text. Used by
+// the Ctrl+click handler; matching is by row only (no column
+// precision), which means clicks anywhere on a #NNN row open the
+// linked item — short rows, intentional Ctrl modifier, acceptable.
+func urlOnLine(line string) string {
+	if m := osc8Pattern.FindStringSubmatch(line); len(m) > 1 {
+		return m[1]
 	}
 	plain := ansiPattern.ReplaceAllString(line, "")
 	return urlPattern.FindString(plain)
-}
-
-// osc8URLAtColumn walks the line tracking visible-column position as
-// it skips over ANSI escapes; whenever it sees an OSC 8 open it
-// records the start column, and on the matching empty-URL OSC 8 close
-// it checks whether col falls inside [start, end).
-func osc8URLAtColumn(line string, col int) string {
-	visCol := 0
-	i := 0
-	type span struct {
-		url      string
-		startCol int
-		open     bool
-	}
-	var cur span
-	for i < len(line) {
-		// OSC 8 open: ESC ] 8 ; ; <URL> (ESC \\ | BEL)
-		if i+3 < len(line) && line[i] == 0x1b && line[i+1] == ']' && line[i+2] == '8' && line[i+3] == ';' {
-			// Find terminator.
-			term := -1
-			termLen := 0
-			for j := i + 4; j < len(line); j++ {
-				if line[j] == 0x07 {
-					term, termLen = j, 1
-					break
-				}
-				if line[j] == 0x1b && j+1 < len(line) && line[j+1] == '\\' {
-					term, termLen = j, 2
-					break
-				}
-			}
-			if term < 0 {
-				return ""
-			}
-			// Body is between i+4 and term, formatted as ";<URL>".
-			body := line[i+4 : term]
-			body = strings.TrimPrefix(body, ";")
-			if body == "" {
-				// Close: did we land inside the open span?
-				if cur.open && col >= cur.startCol && col < visCol {
-					return cur.url
-				}
-				cur = span{}
-			} else {
-				cur = span{url: body, startCol: visCol, open: true}
-			}
-			i = term + termLen
-			continue
-		}
-		// CSI escape: ESC [ ... letter — skip without advancing visCol.
-		if i+1 < len(line) && line[i] == 0x1b && line[i+1] == '[' {
-			j := i + 2
-			for j < len(line) {
-				c := line[j]
-				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-					j++
-					break
-				}
-				j++
-			}
-			i = j
-			continue
-		}
-		// Visible rune — advance one column. Multi-byte UTF-8 runes
-		// take one column for the typical issue title characters we
-		// surface; double-wide CJK would need lipgloss.Width here.
-		_, size := utf8.DecodeRuneInString(line[i:])
-		if size == 0 {
-			size = 1
-		}
-		visCol++
-		i += size
-	}
-	return ""
-}
-
-// plainURLAtColumn finds an http(s) URL whose visible column range
-// contains col. Used for the URL row and Markdown body where the URL
-// is the rendered text.
-func plainURLAtColumn(line string, col int) string {
-	plain := ansiPattern.ReplaceAllString(line, "")
-	matches := urlPattern.FindAllStringIndex(plain, -1)
-	for _, m := range matches {
-		// m is byte-offset; column is rune-offset. For ASCII URLs the
-		// two coincide; for surrounding non-ASCII text they may
-		// diverge, but URLs in our content are always ASCII.
-		startCol := utf8.RuneCountInString(plain[:m[0]])
-		endCol := utf8.RuneCountInString(plain[:m[1]])
-		if col >= startCol && col < endCol {
-			return plain[m[0]:m[1]]
-		}
-	}
-	return ""
 }
 
 // ansiPattern matches ANSI escape sequences including OSC 8 hyperlinks.
@@ -149,7 +47,6 @@ type DetailPane struct {
 	lines    []string
 	pendingG bool
 	yOffset  int // screen Y of the pane's top edge (e.g. tab bar height)
-	xOffset  int // screen X of the pane's left edge (e.g. sidebar width)
 }
 
 // NewDetailPane creates a new detail pane.
@@ -194,13 +91,6 @@ func (d *DetailPane) SetFocused(focused bool) {
 // coords into pane-local content rows.
 func (d *DetailPane) SetYOffset(y int) {
 	d.yOffset = y
-}
-
-// SetXOffset records the screen-X column where the pane's left edge
-// sits (i.e. the sidebar width). Lets Ctrl+click resolve which
-// OSC 8 span the cursor is over instead of just any link on the row.
-func (d *DetailPane) SetXOffset(x int) {
-	d.xOffset = x
 }
 
 // Focused returns focus state.
@@ -261,9 +151,7 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 		if lineIdx < 0 || lineIdx >= len(d.lines) {
 			return nil
 		}
-		localX := mouse.X - d.xOffset
-		url := urlAtColumn(d.lines[lineIdx], localX)
-		if url != "" {
+		if url := urlOnLine(d.lines[lineIdx]); url != "" {
 			_ = exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
 		}
 		return nil
