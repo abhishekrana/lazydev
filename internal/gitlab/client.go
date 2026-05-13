@@ -13,12 +13,13 @@ import (
 
 // Client wraps the GitLab API client.
 type Client struct {
-	Raw       *gitlab.Client
-	ProjectID string   // project path e.g. "mygroup/myproject"
-	UserID    int64    // authenticated user's ID
-	Username  string   // authenticated user's username
-	UserIDs   []int64  // all user IDs to track (self + additional users like bots)
-	Usernames []string // all usernames to track
+	Raw              *gitlab.Client
+	ProjectID        string   // project path e.g. "mygroup/myproject"
+	ProjectNumericID int64    // numeric project ID, used for /uploads/ path resolution
+	UserID           int64    // authenticated user's ID
+	Username         string   // authenticated user's username
+	UserIDs          []int64  // all user IDs to track (self + additional users like bots)
+	Usernames        []string // all usernames to track
 }
 
 // NewClient creates a GitLab client with token discovery.
@@ -78,6 +79,13 @@ func NewClient(url, token, project string, additionalUsers []string) (*Client, e
 	c.Username = user.Username
 	c.UserIDs = []int64{user.ID}
 	c.Usernames = []string{user.Username}
+
+	// Resolve the numeric project ID — markdown rendering uses it to
+	// rewrite /uploads/ paths into absolute URLs. Cheap and one-shot.
+	proj, _, projErr := raw.Projects.GetProject(project, nil)
+	if projErr == nil && proj != nil {
+		c.ProjectNumericID = proj.ID
+	}
 
 	// Resolve additional users (e.g. bot accounts).
 	for _, username := range additionalUsers {

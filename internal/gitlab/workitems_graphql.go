@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -80,7 +81,7 @@ func (c *Client) GetWorkItemBundle(iid int64) (*wiBundle, error) {
 		Query: workItemsByIIDQuery,
 		Variables: map[string]any{
 			"fullPath": c.ProjectID,
-			"iid":      strconv.FormatInt(iid, 10),
+			"iids":     []string{strconv.FormatInt(iid, 10)},
 		},
 	}
 	var resp workItemsByIIDResponse
@@ -90,12 +91,11 @@ func (c *Client) GetWorkItemBundle(iid int64) (*wiBundle, error) {
 	if err := resp.firstError(); err != nil {
 		return nil, err
 	}
-	projectGID := resp.Data.Project.ID
-	nodes := resp.Data.Project.Issues.Nodes
+	nodes := resp.Data.Namespace.WorkItems.Nodes
 	if len(nodes) == 0 {
 		return nil, nil
 	}
-	bundle := nodes[0].toBundle(projectGID)
+	bundle := nodes[0].toBundle(c.ProjectNumericID)
 	return &bundle, nil
 }
 
@@ -121,14 +121,14 @@ func (c *Client) workItemsPage(after string, updatedAfter time.Time) ([]wiBundle
 	if err := resp.firstError(); err != nil {
 		return nil, "", err
 	}
-	proj := resp.Data.Project
-	out := make([]wiBundle, 0, len(proj.Issues.Nodes))
-	for _, n := range proj.Issues.Nodes {
-		out = append(out, n.toBundle(proj.ID))
+	nodes := resp.Data.Namespace.WorkItems.Nodes
+	out := make([]wiBundle, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, n.toBundle(c.ProjectNumericID))
 	}
 	next := ""
-	if proj.Issues.PageInfo.HasNextPage {
-		next = proj.Issues.PageInfo.EndCursor
+	if resp.Data.Namespace.WorkItems.PageInfo.HasNextPage {
+		next = resp.Data.Namespace.WorkItems.PageInfo.EndCursor
 	}
 	return out, next, nil
 }
@@ -137,16 +137,15 @@ func (c *Client) workItemsPage(after string, updatedAfter time.Time) ([]wiBundle
 
 type workItemsPageResponse struct {
 	Data struct {
-		Project struct {
-			ID     string `json:"id"`
-			Issues struct {
+		Namespace struct {
+			WorkItems struct {
 				PageInfo struct {
 					HasNextPage bool   `json:"hasNextPage"`
 					EndCursor   string `json:"endCursor"`
 				} `json:"pageInfo"`
 				Nodes []wiNode `json:"nodes"`
-			} `json:"issues"`
-		} `json:"project"`
+			} `json:"workItems"`
+		} `json:"namespace"`
 	} `json:"data"`
 	Errors gqlErrors `json:"errors"`
 }
@@ -155,12 +154,11 @@ func (r workItemsPageResponse) firstError() error { return r.Errors.first() }
 
 type workItemsByIIDResponse struct {
 	Data struct {
-		Project struct {
-			ID     string `json:"id"`
-			Issues struct {
+		Namespace struct {
+			WorkItems struct {
 				Nodes []wiNode `json:"nodes"`
-			} `json:"issues"`
-		} `json:"project"`
+			} `json:"workItems"`
+		} `json:"namespace"`
 	} `json:"data"`
 	Errors gqlErrors `json:"errors"`
 }
@@ -182,41 +180,61 @@ func (e gqlErrors) first() error {
 	return errors.New("graphql: " + strings.Join(msgs, "; "))
 }
 
-// wiNode is the per-issue GraphQL payload. The project here is a
-// classic Issue (not a WorkItem) because lazydev's UI is rooted in
-// the issue tracker — work-item-only types (Tasks under a parent,
-// Objectives, Key Results) are surfaced as child rows rather than as
-// top-level sidebar entries.
+// wiNode is the GraphQL payload for a single work item. Widgets is a
+// polymorphic array — every entry has a __typename plus the fields
+// for its variant; we unmarshal with one flat struct since GraphQL
+// returns them merged.
 type wiNode struct {
-	IID         string        `json:"iid"`
-	State       string        `json:"state"`
-	Title       string        `json:"title"`
-	WebURL      string        `json:"webUrl"`
-	CreatedAt   time.Time     `json:"createdAt"`
-	UpdatedAt   time.Time     `json:"updatedAt"`
-	Description string        `json:"description"`
-	Author      *userNode     `json:"author"`
-	Labels      labelConn     `json:"labels"`
-	Milestone   *titledNode   `json:"milestone"`
-	Iteration   *iterationGQL `json:"iteration"`
-	Assignees   userConn      `json:"assignees"`
-
-	// Work-item-only data accessible via the Issue.workItemWidgets path
-	// in GraphQL — gated behind feature flags on some GitLab versions,
-	// which is why we read it via separate fields rather than a typed
-	// widgets[] discriminator. Each pointer is nil when absent.
-	WorkItem *wiWidgetsNode `json:"workItem"`
+	IID       string     `json:"iid"`
+	State     string     `json:"state"`
+	Title     string     `json:"title"`
+	WebURL    string     `json:"webUrl"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+	Author    *userNode  `json:"author"`
+	Widgets   []wiWidget `json:"widgets"`
 }
 
-// wiWidgetsNode collects the fields we read from the WorkItem path on
-// an Issue. Fields are zero-value when not granted (Premium gating,
-// older GitLab versions).
-type wiWidgetsNode struct {
-	Status   *titledNode    `json:"workItemStatus"`
-	Parent   *parentNode    `json:"parent"`
-	Children childConn      `json:"children"`
-	LinkedTo linkedItemConn `json:"linkedItems"`
+// wiWidget is a flat union of every widget field we read. Each widget
+// object only populates the fields for its own __typename; the rest
+// are nil. Allocating one struct shape avoids a custom UnmarshalJSON.
+type wiWidget struct {
+	Typename string `json:"__typename"`
+
+	// WorkItemWidgetDescription
+	Description string `json:"description"`
+
+	// WorkItemWidgetAssignees
+	Assignees userConn `json:"assignees"`
+
+	// WorkItemWidgetLabels
+	Labels labelConn `json:"labels"`
+
+	// WorkItemWidgetMilestone
+	Milestone *titledNode `json:"milestone"`
+
+	// WorkItemWidgetIteration
+	Iteration *iterationGQL `json:"iteration"`
+
+	// WorkItemWidgetStatus
+	Status *titledNode `json:"status"`
+
+	// WorkItemWidgetHierarchy
+	Parent   *parentNode `json:"parent"`
+	Children childConn   `json:"children"`
+
+	// WorkItemWidgetLinkedItems
+	LinkedItems linkedItemConn `json:"linkedItems"`
 }
+
+// MarshalJSON / UnmarshalJSON are not customised — the default
+// behaviour (unmarshal whichever fields are present) gives us the
+// effect we want without per-widget structs.
+
+// Used by the JSON decoder via Go's struct tag machinery; no methods
+// required. The blank imports here document the encoding/json
+// dependency for the file.
+var _ = json.Unmarshal
 
 type userNode struct {
 	Username string `json:"username"`
@@ -284,70 +302,86 @@ type linkedItemNode struct {
 }
 
 // toBundle splits the GraphQL node into the three cache rows.
-// projectGID is the parent project's GID; we parse the numeric tail so
-// formatters can resolve /uploads/ paths.
-func (n wiNode) toBundle(projectGID string) wiBundle {
+// projectNumericID is the project's numeric REST ID — formatters need
+// it to resolve /uploads/ paths in markdown bodies.
+func (n wiNode) toBundle(projectNumericID int64) wiBundle {
 	b := wiBundle{
 		Issue: messages.GitLabIssue{
-			IID:         atoi64(n.IID),
-			ProjectID:   gidToInt64(projectGID),
-			Title:       n.Title,
-			State:       gqlStateToREST(n.State),
-			Description: n.Description,
-			WebURL:      n.WebURL,
-			CreatedAt:   n.CreatedAt,
-			UpdatedAt:   n.UpdatedAt,
+			IID:       atoi64(n.IID),
+			ProjectID: projectNumericID,
+			Title:     n.Title,
+			State:     gqlStateToREST(n.State),
+			WebURL:    n.WebURL,
+			CreatedAt: n.CreatedAt,
+			UpdatedAt: n.UpdatedAt,
 		},
 	}
 	if n.Author != nil {
 		b.Issue.Author = n.Author.Username
 	}
-	if len(n.Assignees.Nodes) > 0 {
-		b.Issue.Assignees = make([]string, 0, len(n.Assignees.Nodes))
-		for _, a := range n.Assignees.Nodes {
-			b.Issue.Assignees = append(b.Issue.Assignees, a.Username)
-		}
-	}
-	if len(n.Labels.Nodes) > 0 {
-		b.Issue.Labels = make([]string, 0, len(n.Labels.Nodes))
-		for _, l := range n.Labels.Nodes {
-			b.Issue.Labels = append(b.Issue.Labels, l.display())
-		}
-	}
-	if n.Milestone != nil {
-		b.Issue.Milestone = n.Milestone.display()
-	}
-	if n.Iteration != nil {
-		b.Issue.Iteration = n.Iteration.Title
-		b.Issue.IterationDates = formatIterationDates(n.Iteration.StartDate, n.Iteration.DueDate)
-	}
-	if n.WorkItem != nil {
-		b.Issue.Status = n.WorkItem.Status.display()
-		if n.WorkItem.Parent != nil {
-			b.Issue.ParentIID = atoi64(n.WorkItem.Parent.IID)
-			b.Issue.ParentTitle = n.WorkItem.Parent.Title
-		}
-		for _, c := range n.WorkItem.Children.Nodes {
-			itemType := ""
-			if c.WorkItemType != nil {
-				itemType = c.WorkItemType.display()
+
+	for _, w := range n.Widgets {
+		switch w.Typename {
+		case "WorkItemWidgetDescription":
+			b.Issue.Description = w.Description
+
+		case "WorkItemWidgetAssignees":
+			if len(w.Assignees.Nodes) > 0 {
+				b.Issue.Assignees = make([]string, 0, len(w.Assignees.Nodes))
+				for _, a := range w.Assignees.Nodes {
+					b.Issue.Assignees = append(b.Issue.Assignees, a.Username)
+				}
 			}
-			b.Children = append(b.Children, messages.GitLabChildItem{
-				IID:      atoi64(c.IID),
-				Title:    c.Title,
-				State:    gqlStateToREST(c.State),
-				ItemType: itemType,
-				WebURL:   c.WebURL,
-			})
-		}
-		for _, li := range n.WorkItem.LinkedTo.Nodes {
-			b.Linked = append(b.Linked, messages.GitLabLinkedItem{
-				IID:      atoi64(li.WorkItem.IID),
-				Title:    li.WorkItem.Title,
-				State:    gqlStateToREST(li.WorkItem.State),
-				LinkType: gqlLinkType(li.LinkType),
-				WebURL:   li.WorkItem.WebURL,
-			})
+
+		case "WorkItemWidgetLabels":
+			if len(w.Labels.Nodes) > 0 {
+				b.Issue.Labels = make([]string, 0, len(w.Labels.Nodes))
+				for _, l := range w.Labels.Nodes {
+					b.Issue.Labels = append(b.Issue.Labels, l.display())
+				}
+			}
+
+		case "WorkItemWidgetMilestone":
+			b.Issue.Milestone = w.Milestone.display()
+
+		case "WorkItemWidgetIteration":
+			if w.Iteration != nil {
+				b.Issue.Iteration = w.Iteration.Title
+				b.Issue.IterationDates = formatIterationDates(w.Iteration.StartDate, w.Iteration.DueDate)
+			}
+
+		case "WorkItemWidgetStatus":
+			b.Issue.Status = w.Status.display()
+
+		case "WorkItemWidgetHierarchy":
+			if w.Parent != nil {
+				b.Issue.ParentIID = atoi64(w.Parent.IID)
+				b.Issue.ParentTitle = w.Parent.Title
+			}
+			for _, c := range w.Children.Nodes {
+				itemType := ""
+				if c.WorkItemType != nil {
+					itemType = c.WorkItemType.display()
+				}
+				b.Children = append(b.Children, messages.GitLabChildItem{
+					IID:      atoi64(c.IID),
+					Title:    c.Title,
+					State:    gqlStateToREST(c.State),
+					ItemType: itemType,
+					WebURL:   c.WebURL,
+				})
+			}
+
+		case "WorkItemWidgetLinkedItems":
+			for _, li := range w.LinkedItems.Nodes {
+				b.Linked = append(b.Linked, messages.GitLabLinkedItem{
+					IID:      atoi64(li.WorkItem.IID),
+					Title:    li.WorkItem.Title,
+					State:    gqlStateToREST(li.WorkItem.State),
+					LinkType: gqlLinkType(li.LinkType),
+					WebURL:   li.WorkItem.WebURL,
+				})
+			}
 		}
 	}
 	return b
@@ -355,11 +389,17 @@ func (n wiNode) toBundle(projectGID string) wiBundle {
 
 // --- helpers ---
 
-// gqlStateToREST maps the GraphQL state spelling ("OPENED", "CLOSED")
+// gqlStateToREST maps the GraphQL state spelling ("OPEN", "CLOSED")
 // to the REST spelling ("opened", "closed") that the rest of lazydev
-// already uses everywhere.
+// already uses everywhere. GraphQL uses "OPEN" for Issues but "open"
+// for some other contexts — normalise to lowercase and then translate
+// "open" → "opened" to match the REST convention.
 func gqlStateToREST(s string) string {
-	return strings.ToLower(s)
+	low := strings.ToLower(s)
+	if low == "open" {
+		return "opened"
+	}
+	return low
 }
 
 // gqlLinkType normalises the linkType enum to the lowercase REST
@@ -375,16 +415,6 @@ func atoi64(s string) int64 {
 	return v
 }
 
-// gidToInt64 parses the trailing integer from a GitLab GID
-// (e.g. "gid://gitlab/Project/12345678" → 12345678).
-func gidToInt64(gid string) int64 {
-	idx := strings.LastIndex(gid, "/")
-	if idx < 0 || idx == len(gid)-1 {
-		return 0
-	}
-	return atoi64(gid[idx+1:])
-}
-
 // formatIterationDates renders "Mar 22 – Apr 4, 2026" from two ISO
 // date strings. Empty when either is missing.
 func formatIterationDates(start, due string) string {
@@ -398,15 +428,15 @@ func formatIterationDates(start, due string) string {
 
 // --- query templates ---
 
-// workItemsPageQuery fetches one page of issues with every widget
-// field lazydev renders. The `workItem` block is the work-items
-// projection of the same Issue — it surfaces Status, Parent, Children,
-// and LinkedItems in one round trip.
+// workItemsPageQuery fetches one page of work items (filtered to
+// type=ISSUE) with every widget lazydev renders. The widgets[] array
+// is polymorphic — each entry has __typename plus the fields for its
+// variant; the Go side dispatches on Typename when mapping.
 const workItemsPageQuery = `
 query LazyDevWorkItemsPage($fullPath: ID!, $first: Int!, $after: String, $updatedAfter: Time) {
-  project(fullPath: $fullPath) {
-    id
-    issues(
+  namespace(fullPath: $fullPath) {
+    workItems(
+      types: [ISSUE]
       first: $first
       after: $after
       sort: UPDATED_DESC
@@ -420,36 +450,24 @@ query LazyDevWorkItemsPage($fullPath: ID!, $first: Int!, $after: String, $update
         webUrl
         createdAt
         updatedAt
-        description
         author { username }
-        assignees { nodes { username } }
-        labels { nodes { title } }
-        milestone { title }
-        iteration { title startDate dueDate }
-        workItem {
-          workItemStatus { name }
-          parent {
-            iid
-            title
-            webUrl
+        widgets {
+          __typename
+          ... on WorkItemWidgetDescription { description }
+          ... on WorkItemWidgetAssignees { assignees { nodes { username } } }
+          ... on WorkItemWidgetLabels    { labels    { nodes { title } } }
+          ... on WorkItemWidgetMilestone { milestone { title } }
+          ... on WorkItemWidgetIteration { iteration { title startDate dueDate } }
+          ... on WorkItemWidgetStatus    { status    { name } }
+          ... on WorkItemWidgetHierarchy {
+            parent   { iid title webUrl }
+            children { nodes { iid title state webUrl workItemType { name } } }
           }
-          children {
-            nodes {
-              iid
-              title
-              state
-              webUrl
-              workItemType { name }
-            }
-          }
-          linkedItems {
-            nodes {
-              linkType
-              workItem {
-                iid
-                title
-                state
-                webUrl
+          ... on WorkItemWidgetLinkedItems {
+            linkedItems {
+              nodes {
+                linkType
+                workItem { iid title state webUrl }
               }
             }
           }
@@ -461,13 +479,11 @@ query LazyDevWorkItemsPage($fullPath: ID!, $first: Int!, $after: String, $update
 `
 
 // workItemsByIIDQuery is the single-item variant used for per-detail
-// freshness. Same projection shape as workItemsPageQuery, narrowed by
-// IID so it returns a single-element nodes array.
+// freshness. Same projection shape, filtered by IID.
 const workItemsByIIDQuery = `
-query LazyDevWorkItemByIID($fullPath: ID!, $iid: String!) {
-  project(fullPath: $fullPath) {
-    id
-    issues(iids: [$iid]) {
+query LazyDevWorkItemByIID($fullPath: ID!, $iids: [String!]!) {
+  namespace(fullPath: $fullPath) {
+    workItems(types: [ISSUE], iids: $iids) {
       nodes {
         iid
         state
@@ -475,36 +491,24 @@ query LazyDevWorkItemByIID($fullPath: ID!, $iid: String!) {
         webUrl
         createdAt
         updatedAt
-        description
         author { username }
-        assignees { nodes { username } }
-        labels { nodes { title } }
-        milestone { title }
-        iteration { title startDate dueDate }
-        workItem {
-          workItemStatus { name }
-          parent {
-            iid
-            title
-            webUrl
+        widgets {
+          __typename
+          ... on WorkItemWidgetDescription { description }
+          ... on WorkItemWidgetAssignees { assignees { nodes { username } } }
+          ... on WorkItemWidgetLabels    { labels    { nodes { title } } }
+          ... on WorkItemWidgetMilestone { milestone { title } }
+          ... on WorkItemWidgetIteration { iteration { title startDate dueDate } }
+          ... on WorkItemWidgetStatus    { status    { name } }
+          ... on WorkItemWidgetHierarchy {
+            parent   { iid title webUrl }
+            children { nodes { iid title state webUrl workItemType { name } } }
           }
-          children {
-            nodes {
-              iid
-              title
-              state
-              webUrl
-              workItemType { name }
-            }
-          }
-          linkedItems {
-            nodes {
-              linkType
-              workItem {
-                iid
-                title
-                state
-                webUrl
+          ... on WorkItemWidgetLinkedItems {
+            linkedItems {
+              nodes {
+                linkType
+                workItem { iid title state webUrl }
               }
             }
           }
