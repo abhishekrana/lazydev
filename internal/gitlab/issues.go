@@ -251,6 +251,12 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 	}
 	rows := []labeled{
 		{"State", FormatState(issue.State)},
+		// Status and Parent come from GitLab's work-items API (separate
+		// from the standard issues API). Rows are emitted as
+		// placeholders today so the layout stays consistent across
+		// items; plumbing the actual values is a follow-up.
+		{"Status", ""},
+		{"Parent", ""},
 		{"Assignees", issue.Assignee},
 		{"Labels", strings.Join(issue.Labels, ", ")},
 		{"Milestone", issue.Milestone},
