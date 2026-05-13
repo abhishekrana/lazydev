@@ -249,18 +249,22 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 	if iter != "" && issue.IterationDates != "" {
 		iter += "  (" + issue.IterationDates + ")"
 	}
+	// Row order mirrors GitLab's right column (State, Status,
+	// Assignees, Labels, Parent, Weight, Milestone, Iteration, Dates);
+	// Author / Updated / URL trail below since GitLab doesn't surface
+	// them in that column. Status / Parent / Weight / Dates come from
+	// the work-items API (not the standard issues API), so they emit
+	// as placeholders today — wiring is a follow-up.
 	rows := []labeled{
 		{"State", FormatState(issue.State)},
-		// Status and Parent come from GitLab's work-items API (separate
-		// from the standard issues API). Rows are emitted as
-		// placeholders today so the layout stays consistent across
-		// items; plumbing the actual values is a follow-up.
 		{"Status", ""},
-		{"Parent", ""},
 		{"Assignees", issue.Assignee},
 		{"Labels", strings.Join(issue.Labels, ", ")},
+		{"Parent", ""},
+		{"Weight", ""},
 		{"Milestone", issue.Milestone},
 		{"Iteration", iter},
+		{"Dates", ""},
 		{"Author", issue.Author},
 		{"Updated", issue.UpdatedAt.Format("2006-01-02 15:04")},
 		{"URL", issue.WebURL},
