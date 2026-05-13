@@ -100,8 +100,7 @@ func (h HelpOverlay) View() string {
 			keys: [][2]string{
 				{"/", "Query line: assignee:@me label:bug state:open …"},
 				{"r", "Refresh now (sync nudge)"},
-				{"1–9", "Recall saved view (mine, ai-queue, …)"},
-				{":save <n> <e>", "Save current view"},
+				{"1–3", "Switch tab"},
 			},
 		},
 		{

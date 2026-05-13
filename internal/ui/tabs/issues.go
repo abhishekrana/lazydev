@@ -217,11 +217,6 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
-	case messages.ApplyViewMsg:
-		t.queryExpr = msg.Expr
-		t.notification = "view: " + msg.Name
-		return t, t.fetchIssues()
-
 	case messages.ExportDoneMsg:
 		if msg.Err != nil {
 			t.notification = fmt.Sprintf("%s export failed: %v", msg.Channel, msg.Err)

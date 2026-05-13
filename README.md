@@ -1,6 +1,6 @@
 # lazydev
 
-A terminal cockpit for working GitLab issues and merge requests with Claude Code as a pair programmer. Reads from a local SQLite mirror so the UI is instant, ships a query DSL on `/`, multi-select export, saved views, and one-key handoff (`C` / `P`) to a Claude Code session in a tmux split.
+A terminal cockpit for working GitLab issues and merge requests with Claude Code as a pair programmer. Reads from a local SQLite mirror so the UI is instant, ships a query DSL on `/`, multi-select export, and one-key handoff (`C` / `P`) to a Claude Code session in a tmux split.
 
 Built with Go and Bubble Tea v2. Solarized Light by default.
 
@@ -11,7 +11,6 @@ Built with Go and Bubble Tea v2. Solarized Light by default.
 - **GraphQL bulk sync** — one paginated `namespace.workItems` query per 50 issues returns title/state + every widget (Status, Parent, Children, Linked items, Description). A 200-item prefetch is ~4 requests instead of ~200.
 - **Rich detail pane** — `gh issue view`-style header strip (State, Status, Assignees, Labels, Parent, Milestone, Iteration, Author, Created, Updated, URL) + glamour-rendered body + footer sections for Related MRs, Child items, and Linked items (grouped `Blocked by` / `Blocks` / `Relates to`). Every `#NNN` / `!NNN` reference and URL is an OSC 8 hyperlink — `Ctrl+click` opens it in the browser.
 - **Query DSL on `/`** — `assignee:@me`, `assignee:@ai`, `label:bug`, `state:open`, `kind:mr`, `updated:>7d`, plus bare fuzzy terms over title/body/notes (FTS5). Tokens are AND'd; quoted strings preserved. `Enter` commits the filter without dropping it.
-- **Saved views** — number keys `1`–`9` recall views from `~/.config/lazydev/views.yaml`. Defaults seeded on first run: `mine`, `ai-queue`, `review`, `recent`. Manage via `:save <name> <expr>`, `:view <name>`, `:del <name>`.
 - **Multi-select** — `Space` to mark, `v` for visual range, `Esc` to clear. All export and Claude dispatch keys act on the marked set (or the cursor item if nothing is marked).
 - **Claude Code handoff** — `C` opens an interactive Claude session in a tmux window (or new tmux session if outside tmux); `P` runs `claude -p` one-shot and tees output to `.lazydev/claude-runs/<id>.log`. Both compose a structured prompt from the marked items.
 - **Sessions tab** — Claude tab lists dispatched sessions from `.lazydev/sessions.json`; `Enter` re-attaches, `o` opens the originating issue/MR, `L` opens the run log, `d` drops the record.
@@ -62,7 +61,7 @@ Claude Code integration activates automatically when the `claude` binary is on `
 | `q` / `Ctrl+C` | Quit                                             |
 | `Tab`          | Next tab                                         |
 | `Shift+Tab`    | Previous tab                                     |
-| `1`–`9`        | Recall saved view (falls back to tab if no view) |
+| `1`–`9`        | Switch tab by index                              |
 | `?`            | Help overlay                                     |
 | `:`            | Command palette                                  |
 
@@ -78,16 +77,12 @@ Claude Code integration activates automatically when the `claude` binary is on `
 | `Ctrl+W W` / `Alt+W` | Toggle pane focus (sidebar ↔ detail)  |
 | `Esc`                | Cancel / clear marks                   |
 
-### Query & views (sidebar)
+### Query (sidebar)
 
-| Key                | Action                                           |
-| ------------------ | ------------------------------------------------ |
-| `/`                | Open query line (DSL)                            |
-| `r`                | Refresh now (nudges syncer + reloads from cache) |
-| `1`–`9`            | Recall saved view                                |
-| `:save <n> <expr>` | Save current expression as a named view          |
-| `:view <name>`     | Apply a saved view to the active tab             |
-| `:del <name>`      | Delete a saved view                              |
+| Key | Action                                           |
+| --- | ------------------------------------------------ |
+| `/` | Open query line (DSL)                            |
+| `r` | Refresh now (nudges syncer + reloads from cache) |
 
 Query DSL examples:
 
@@ -196,14 +191,12 @@ claude:
   tmux_session: lazydev-claude
 ```
 
-Views file: `~/.config/lazydev/views.yaml`. Created on first run with defaults (`mine`, `ai-queue`, `review`, `recent`).
-
 ## Architecture
 
 ```
 cmd/lazydev/main.go         entry: builds SharedState, wires syncer events into Bubble Tea
 internal/
-  app/                      SharedState: GitLab client, cache, syncer, views, Claude env/store
+  app/                      SharedState: GitLab client, cache, syncer, Claude env/store
   cache/                    SQLite mirror (modernc.org/sqlite) + FTS5 search + Syncer goroutine
                             schema v3: issues / mrs / notes / related_mrs / linked_items / child_items / search_fts
   claude/                   Claude Code: discovery, structured prompt, sessions store, dispatch
@@ -213,9 +206,8 @@ internal/
     workitems_graphql.go    paginated GraphQL bulk fetch for issues + widgets (status, parent, children, linked)
     sync.go                 ListMRsUpdatedAfter (REST) — MR sync is still REST since work-items don't apply
   query/                    Query DSL parser (`assignee:@me label:bug state:open`)
-  views/                    Saved-views YAML store (1–9 recall)
   ui/
-    root.go                 RootModel, tab dispatch, command palette, view application, sync indicator
+    root.go                 RootModel, tab dispatch, command palette, sync indicator
     theme/                  Lip Gloss styles + keybindings
     components/             Sidebar (multi-select), DetailPane (OSC 8 + Ctrl+click), QueryLine, etc.
     tabs/                   IssuesTab, MRsTab, ClaudeTab + shared Options + dispatchClaude

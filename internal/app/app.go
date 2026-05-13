@@ -10,7 +10,6 @@ import (
 	"github.com/abhishek-rana/lazydev/internal/claude"
 	"github.com/abhishek-rana/lazydev/internal/config"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
-	"github.com/abhishek-rana/lazydev/internal/views"
 )
 
 // SharedState holds backend clients shared across tabs.
@@ -18,7 +17,6 @@ type SharedState struct {
 	GitLabClient *gitlabpkg.Client
 	Cache        *cache.Store
 	Syncer       *cache.Syncer
-	Views        *views.Store
 	Config       *config.Config
 	ClaudeEnv    claude.Env
 	ClaudeStore  *claude.Store
@@ -53,13 +51,6 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 		return nil, fmt.Errorf("cache: %w", err)
 	}
 	state.Cache = store
-
-	vs, err := views.Load(views.DefaultPath())
-	if err != nil {
-		state.Warnings = append(state.Warnings, fmt.Sprintf("views: %v", err))
-	} else {
-		state.Views = vs
-	}
 
 	if state.GitLabClient != nil {
 		syncInterval := time.Duration(cfg.Cache.SyncIntervalS) * time.Second

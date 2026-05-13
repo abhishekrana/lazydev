@@ -11,7 +11,6 @@ import (
 
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
-	"github.com/abhishek-rana/lazydev/internal/views"
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
@@ -36,7 +35,6 @@ type RootModel struct {
 	statusBar  components.StatusBar
 	help       components.HelpOverlay
 	cmdPalette components.CmdPalette
-	views      *views.Store
 	activeTab  int
 	width      int
 	height     int
@@ -46,9 +44,8 @@ type RootModel struct {
 	sync messages.SyncStatusMsg
 }
 
-// NewRootModel creates the root model with the given tabs and the
-// saved-views store (may be nil if persistence failed).
-func NewRootModel(tabs []TabModel, vs *views.Store) RootModel {
+// NewRootModel creates the root model with the given tabs.
+func NewRootModel(tabs []TabModel) RootModel {
 	titles := make([]string, len(tabs))
 	for i, t := range tabs {
 		titles[i] = t.Title()
@@ -60,7 +57,6 @@ func NewRootModel(tabs []TabModel, vs *views.Store) RootModel {
 		statusBar:  components.NewStatusBar(),
 		help:       components.NewHelpOverlay(),
 		cmdPalette: components.NewCmdPalette(),
-		views:      vs,
 	}
 }
 
@@ -134,15 +130,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			idx := (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
 			return m, m.switchTab(idx)
 		case msg.String() >= "1" && msg.String() <= "9":
-			// Number keys recall saved views. Falls back to tab
-			// switching when no view exists at that index AND the
-			// index corresponds to a real tab.
 			idx := int(msg.String()[0] - '1')
-			if m.views != nil {
-				if v, ok := m.views.ByIndex(idx); ok {
-					return m, m.applyView(v)
-				}
-			}
 			if idx >= 0 && idx < len(m.tabs) {
 				return m, m.switchTab(idx)
 			}
@@ -152,17 +140,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messages.SwitchTabMsg:
 		if msg.Tab >= 0 && msg.Tab < len(m.tabs) {
 			return m, m.switchTab(msg.Tab)
-		}
-		return m, nil
-
-	case viewApplyDispatchMsg:
-		if msg.tab >= 0 && msg.tab < len(m.tabs) {
-			var cmd tea.Cmd
-			m.tabs[msg.tab], cmd = m.tabs[msg.tab].Update(messages.ApplyViewMsg{
-				Name: msg.view.Name,
-				Expr: msg.view.Expr,
-			})
-			return m, cmd
 		}
 		return m, nil
 	}
@@ -181,7 +158,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		messages.IssueListMsg, messages.IssueDetailMsg, messages.IssueActionMsg,
 		messages.MRListMsg, messages.MRDetailMsg, messages.MRActionMsg,
 		messages.CacheUpdatedMsg, messages.SyncStatusMsg,
-		messages.ApplyViewMsg,
 		messages.ClaudeDispatchMsg, messages.ClaudeSessionsReloadMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
@@ -213,19 +189,6 @@ func (m *RootModel) switchTab(idx int) tea.Cmd {
 	return cmd
 }
 
-// applyView routes the view's expression to the active tab.
-func (m *RootModel) applyView(v views.View) tea.Cmd {
-	if m.activeTab < 0 || m.activeTab >= len(m.tabs) {
-		return nil
-	}
-	var cmd tea.Cmd
-	m.tabs[m.activeTab], cmd = m.tabs[m.activeTab].Update(messages.ApplyViewMsg{
-		Name: v.Name,
-		Expr: v.Expr,
-	})
-	return cmd
-}
-
 // executeCommand handles commands from the command palette.
 func (m RootModel) executeCommand(cmd string, args []string) tea.Cmd {
 	switch strings.ToLower(cmd) {
@@ -239,44 +202,10 @@ func (m RootModel) executeCommand(cmd string, args []string) tea.Cmd {
 				}
 			}
 		}
-	case "save":
-		// :save <name> <expr...>
-		if m.views == nil || len(args) < 2 {
-			return nil
-		}
-		name := args[0]
-		expr := strings.Join(args[1:], " ")
-		_ = m.views.Save(views.View{Name: name, Expr: expr})
-		return nil
-	case "del", "delete":
-		if m.views == nil || len(args) < 1 {
-			return nil
-		}
-		_, _ = m.views.Delete(args[0])
-		return nil
-	case "view":
-		// :view <name>
-		if m.views == nil || len(args) < 1 {
-			return nil
-		}
-		if v, ok := m.views.Get(args[0]); ok {
-			tab := m.activeTab
-			return func() tea.Msg {
-				return viewApplyDispatchMsg{tab: tab, view: v}
-			}
-		}
 	case "help":
 		m.help.Toggle()
 	}
 	return nil
-}
-
-// viewApplyDispatchMsg is the internal envelope that lets palette
-// commands trigger a view application after returning from the
-// palette's keypress closure.
-type viewApplyDispatchMsg struct {
-	tab  int
-	view views.View
 }
 
 // View renders the root model.

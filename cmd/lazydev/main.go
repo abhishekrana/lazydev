@@ -51,7 +51,7 @@ func main() {
 		tabs.NewClaudeTab(opts),
 	}
 
-	root := ui.NewRootModel(tabModels, state.Views)
+	root := ui.NewRootModel(tabModels)
 	p := tea.NewProgram(root)
 
 	// Forward sync events into the Bubble Tea program before starting
