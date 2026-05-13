@@ -9,10 +9,29 @@ import (
 
 // Config is the application configuration.
 type Config struct {
-	Docker     DockerConfig     `yaml:"docker"`
-	Kubernetes KubernetesConfig `yaml:"kubernetes"`
-	GitLab     GitLabConfig     `yaml:"gitlab"`
-	UI         UIConfig         `yaml:"ui"`
+	GitLab GitLabConfig `yaml:"gitlab"`
+	Cache  CacheConfig  `yaml:"cache"`
+	Export ExportConfig `yaml:"export"`
+	UI     UIConfig     `yaml:"ui"`
+	Claude ClaudeConfig `yaml:"claude"`
+}
+
+// ClaudeConfig configures the Claude Code integration. All fields have
+// sensible defaults; users do not need to set any of them for the
+// integration to work when the `claude` binary is on PATH.
+type ClaudeConfig struct {
+	// Binary is the CLI binary name resolved against PATH.
+	Binary string `yaml:"binary"`
+	// SpecDir is the repo-relative directory where feature specs live.
+	SpecDir string `yaml:"spec_dir"`
+	// PromptsDir is the repo-relative directory for prompt templates.
+	PromptsDir string `yaml:"prompts_dir"`
+	// SessionFile is the repo-relative JSON file persisting dispatched
+	// sessions across lazydev restarts.
+	SessionFile string `yaml:"session_file"`
+	// TmuxSession is the tmux session name created when lazydev is
+	// launched outside of tmux. Per-dispatch unique IDs are appended.
+	TmuxSession string `yaml:"tmux_session"`
 }
 
 // GitLabConfig holds GitLab-specific settings.
@@ -21,31 +40,30 @@ type GitLabConfig struct {
 	Token            string   `yaml:"token"`
 	Project          string   `yaml:"project"`
 	AdditionalUsers  []string `yaml:"additional_users"`
+	AIUser           string   `yaml:"ai_user"`
 	RefreshIntervalS int      `yaml:"refresh_interval_s"`
 }
 
-// DockerConfig holds Docker-specific settings.
-type DockerConfig struct {
-	Host             string `yaml:"host"`
-	ComposeDetection bool   `yaml:"compose_detection"`
+// CacheConfig holds SQLite cache + sync settings.
+type CacheConfig struct {
+	DBPath             string `yaml:"db_path"`
+	SyncIntervalS      int    `yaml:"sync_interval_s"`
+	PrefetchWindowDays int    `yaml:"prefetch_window_days"`
 }
 
-// KubernetesConfig holds Kubernetes-specific settings.
-type KubernetesConfig struct {
-	Kubeconfig string   `yaml:"kubeconfig"`
-	Context    string   `yaml:"context"`
-	Namespaces []string `yaml:"namespaces"`
+// ExportConfig holds Claude/LLM export settings.
+type ExportConfig struct {
+	Format            string `yaml:"format"`      // "claude-xml" | "markdown"
+	LLMCommand        string `yaml:"llm_command"` // e.g. "claude -p"
+	IncludeComments   bool   `yaml:"include_comments"`
+	IncludeRelatedMRs string `yaml:"include_related_mrs"` // "stub" | "full" | "none"
 }
 
 // UIConfig holds UI display settings.
 type UIConfig struct {
-	Theme            string `yaml:"theme"`
-	SidebarWidth     int    `yaml:"sidebar_width"`
-	LogBufferSize    int    `yaml:"log_buffer_size"`
-	BatchIntervalMs  int    `yaml:"batch_interval_ms"`
-	ShowTimestamps   bool   `yaml:"timestamps"`
-	WrapLines        bool   `yaml:"wrap_lines"`
-	RefreshIntervalS int    `yaml:"refresh_interval_s"`
+	Theme        string `yaml:"theme"`
+	SidebarWidth int    `yaml:"sidebar_width"`
+	WrapLines    bool   `yaml:"wrap_lines"`
 }
 
 // Load reads configuration from the default path or returns defaults.

@@ -13,12 +13,13 @@ import (
 
 // Client wraps the GitLab API client.
 type Client struct {
-	Raw       *gitlab.Client
-	ProjectID string   // project path e.g. "mygroup/myproject"
-	UserID    int64    // authenticated user's ID
-	Username  string   // authenticated user's username
-	UserIDs   []int64  // all user IDs to track (self + additional users like bots)
-	Usernames []string // all usernames to track
+	Raw              *gitlab.Client
+	ProjectID        string   // project path e.g. "mygroup/myproject"
+	ProjectNumericID int64    // numeric project ID, used for /uploads/ path resolution
+	UserID           int64    // authenticated user's ID
+	Username         string   // authenticated user's username
+	UserIDs          []int64  // all user IDs to track (self + additional users like bots)
+	Usernames        []string // all usernames to track
 }
 
 // NewClient creates a GitLab client with token discovery.
@@ -79,6 +80,13 @@ func NewClient(url, token, project string, additionalUsers []string) (*Client, e
 	c.UserIDs = []int64{user.ID}
 	c.Usernames = []string{user.Username}
 
+	// Resolve the numeric project ID — markdown rendering uses it to
+	// rewrite /uploads/ paths into absolute URLs. Cheap and one-shot.
+	proj, _, projErr := raw.Projects.GetProject(project, nil)
+	if projErr == nil && proj != nil {
+		c.ProjectNumericID = proj.ID
+	}
+
 	// Resolve additional users (e.g. bot accounts).
 	for _, username := range additionalUsers {
 		users, _, err := raw.Users.ListUsers(&gitlab.ListUsersOptions{
@@ -91,6 +99,21 @@ func NewClient(url, token, project string, additionalUsers []string) (*Client, e
 	}
 
 	return c, nil
+}
+
+// UserIDFor returns the GitLab user ID for a tracked username, if any.
+// Used by the AI-handoff flow (N/T keys) to resolve cfg.GitLab.AIUser
+// to the numeric ID required by GitLab's assign endpoints.
+func (c *Client) UserIDFor(username string) (int64, bool) {
+	if username == "" {
+		return 0, false
+	}
+	for i, u := range c.Usernames {
+		if u == username && i < len(c.UserIDs) {
+			return c.UserIDs[i], true
+		}
+	}
+	return 0, false
 }
 
 // glabConfig represents the glab CLI config structure.

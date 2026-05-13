@@ -13,6 +13,25 @@ import (
 // urlPattern matches http/https URLs in plain text (after ANSI stripping).
 var urlPattern = regexp.MustCompile(`https?://[^\s)\]>]+`)
 
+// osc8Pattern captures the URL from an OSC 8 opener (ESC ] 8 ; ; URL
+// followed by either ESC \ or BEL). Reference rows (#NNN / !NNN) wrap
+// their IID in OSC 8; this is how the click handler resolves them
+// since the URL itself never appears in the visible line text.
+var osc8Pattern = regexp.MustCompile(`\x1b\]8;;([^\x1b\x07]+)(?:\x1b\\|\x07)`)
+
+// urlOnLine returns the first URL on the line — OSC 8-wrapped if
+// present, otherwise a plain http(s) URL in the visible text. Used by
+// the Ctrl+click handler; matching is by row only (no column
+// precision), which means clicks anywhere on a #NNN row open the
+// linked item — short rows, intentional Ctrl modifier, acceptable.
+func urlOnLine(line string) string {
+	if m := osc8Pattern.FindStringSubmatch(line); len(m) > 1 {
+		return m[1]
+	}
+	plain := ansiPattern.ReplaceAllString(line, "")
+	return urlPattern.FindString(plain)
+}
+
 // ansiPattern matches ANSI escape sequences including OSC 8 hyperlinks.
 // OSC sequences: \x1b]...(\x07|\x1b\\), CSI sequences: \x1b[...letter
 var ansiPattern = regexp.MustCompile(`\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-9;]*[a-zA-Z]`)
@@ -27,6 +46,7 @@ type DetailPane struct {
 	focused  bool
 	lines    []string
 	pendingG bool
+	yOffset  int // screen Y of the pane's top edge (e.g. tab bar height)
 }
 
 // NewDetailPane creates a new detail pane.
@@ -66,6 +86,13 @@ func (d *DetailPane) SetFocused(focused bool) {
 	d.focused = focused
 }
 
+// SetYOffset records the screen-Y row where the pane's top edge sits.
+// Used by the mouse-click handler to translate screen-relative click
+// coords into pane-local content rows.
+func (d *DetailPane) SetYOffset(y int) {
+	d.yOffset = y
+}
+
 // Focused returns focus state.
 func (d DetailPane) Focused() bool {
 	return d.focused
@@ -74,7 +101,8 @@ func (d DetailPane) Focused() bool {
 func (d DetailPane) viewableHeight() int {
 	h := d.height
 	if d.title != "" {
-		h--
+		// Title row + the blank spacer beneath it.
+		h -= 2
 	}
 	if h < 1 {
 		h = 1
@@ -112,15 +140,26 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 		if !mouse.Mod.Contains(tea.ModCtrl) {
 			return nil
 		}
-		y := mouse.Y
+		// Translate screen-Y → pane-local content row:
+		//   subtract the pane's screen offset (tab bar height),
+		//   then subtract the in-pane chrome (title row + blank spacer).
+		y := mouse.Y - d.yOffset
 		if d.title != "" {
-			y--
+			y -= 2
 		}
 		lineIdx := d.offset + y
-		if lineIdx >= 0 && lineIdx < len(d.lines) {
-			plain := ansiPattern.ReplaceAllString(d.lines[lineIdx], "")
-			if url := urlPattern.FindString(plain); url != "" {
+		// Try the clicked row first, then the immediate neighbours.
+		// Terminals don't always report a perfectly aligned cell row
+		// for a click on styled (underlined) text — the underline can
+		// trick the user into clicking the row below; lipgloss padding
+		// can shift content up. Searching ±1 catches both.
+		for _, idx := range []int{lineIdx, lineIdx - 1, lineIdx + 1} {
+			if idx < 0 || idx >= len(d.lines) {
+				continue
+			}
+			if url := urlOnLine(d.lines[idx]); url != "" {
 				_ = exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
+				return nil
 			}
 		}
 		return nil
@@ -171,12 +210,15 @@ func (d DetailPane) View() string {
 	var b strings.Builder
 
 	if d.title != "" {
-		headerStyle := theme.InactiveHeaderStyle
+		headerStyle := theme.DetailHeaderInactiveStyle
 		if d.focused {
-			headerStyle = theme.ActiveTabStyle
+			headerStyle = theme.DetailHeaderActiveStyle
 		}
 		header := headerStyle.Width(d.width).Render(d.title)
 		b.WriteString(header)
+		b.WriteString("\n")
+		// Spacer line between title and metadata strip.
+		b.WriteString(strings.Repeat(" ", d.width))
 		b.WriteString("\n")
 	}
 

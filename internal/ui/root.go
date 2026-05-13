@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 	"github.com/abhishek-rana/lazydev/pkg/messages"
@@ -36,6 +39,9 @@ type RootModel struct {
 	width      int
 	height     int
 	ready      bool
+	// sync mirrors the latest SyncStatusMsg so View() can render an
+	// indicator on the right of the status bar.
+	sync messages.SyncStatusMsg
 }
 
 // NewRootModel creates the root model with the given tabs.
@@ -136,32 +142,23 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.switchTab(msg.Tab)
 		}
 		return m, nil
+	}
 
-	case messages.DiscoveryResultMsg:
-		ctx := ""
-		if msg.DockerAvailable {
-			ctx += "docker"
-		}
-		if msg.KubeAvailable {
-			if ctx != "" {
-				ctx += " | "
-			}
-			ctx += msg.KubeContext
-		}
-		m.statusBar.Context = ctx
+	// SyncStatusMsg drives the status-bar indicator and is also
+	// broadcast below so tabs can react if needed.
+	if s, ok := msg.(messages.SyncStatusMsg); ok {
+		m.sync = s
 	}
 
 	// Broadcast data messages to all tabs so each tab receives its own async results.
 	// This is needed because Init() fires Cmds for all tabs, but Update() normally
 	// only routes to the active tab.
 	switch msg.(type) {
-	case messages.LogBatchMsg, messages.ContainerListMsg, messages.ResourceStatsMsg,
-		messages.ContainerActionMsg, messages.ContainerInspectMsg,
-		messages.LogStreamErrorMsg, messages.ExecFinishedMsg, messages.ScaleMsg,
-		messages.LogExportedMsg,
+	case messages.ExecFinishedMsg,
 		messages.IssueListMsg, messages.IssueDetailMsg, messages.IssueActionMsg,
 		messages.MRListMsg, messages.MRDetailMsg, messages.MRActionMsg,
-		messages.PipelineListMsg, messages.PipelineJobsMsg, messages.JobLogMsg:
+		messages.CacheUpdatedMsg, messages.SyncStatusMsg,
+		messages.ClaudeDispatchMsg, messages.ClaudeSessionsReloadMsg:
 		var cmds []tea.Cmd
 		for i := range m.tabs {
 			var cmd tea.Cmd
@@ -205,24 +202,6 @@ func (m RootModel) executeCommand(cmd string, args []string) tea.Cmd {
 				}
 			}
 		}
-	case "docker":
-		return func() tea.Msg { return messages.SwitchTabMsg{Tab: 0} }
-	case "k8s", "kubernetes":
-		return func() tea.Msg { return messages.SwitchTabMsg{Tab: 1} }
-	case "logs":
-		for i, tab := range m.tabs {
-			if tab.Title() == "All Logs" {
-				idx := i
-				return func() tea.Msg { return messages.SwitchTabMsg{Tab: idx} }
-			}
-		}
-	case "dashboard":
-		for i, tab := range m.tabs {
-			if tab.Title() == "Dashboard" {
-				idx := i
-				return func() tea.Msg { return messages.SwitchTabMsg{Tab: idx} }
-			}
-		}
 	case "help":
 		m.help.Toggle()
 	}
@@ -252,6 +231,9 @@ func (m RootModel) View() tea.View {
 		}
 	}
 
+	// Sync indicator on the right of the status bar.
+	m.statusBar.Sync, m.statusBar.SyncTone = formatSyncIndicator(m.sync)
+
 	tabBarView := m.tabBar.View()
 
 	var statusBarView string
@@ -279,6 +261,59 @@ func (m RootModel) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+// formatSyncIndicator renders the syncer's current state as a short
+// status-bar string + a tone hint ("ok" / "warn" / "err" / "").
+// The empty zero-value SyncStatusMsg before the first event renders
+// as a neutral "starting…" so users know lazydev is alive on cold
+// start.
+func formatSyncIndicator(s messages.SyncStatusMsg) (text, tone string) {
+	switch s.State {
+	case "":
+		return "starting…", ""
+	case "prefetching":
+		if s.Progress != "" {
+			return "prefetching " + s.Progress + "…", ""
+		}
+		return "prefetching…", ""
+	case "syncing":
+		return "syncing…", ""
+	case "idle":
+		if s.LastSyncAt.IsZero() {
+			return "synced", "ok"
+		}
+		return "synced " + relativeAgo(s.LastSyncAt), "ok"
+	case "offline":
+		if s.Err != nil {
+			return "offline: " + truncate(s.Err.Error(), 60), "err"
+		}
+		return "offline", "err"
+	default:
+		return s.State, ""
+	}
+}
+
+// relativeAgo returns "5s ago", "12m ago", "3h ago", "2d ago".
+func relativeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return strconv.Itoa(int(d.Seconds())) + "s ago"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes())) + "m ago"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d.Hours())) + "h ago"
+	default:
+		return strconv.Itoa(int(d.Hours()/24)) + "d ago"
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func (m RootModel) contentHeight() int {

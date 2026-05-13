@@ -89,11 +89,27 @@ func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabI
 	return assigned, created, nil, currentIter, nil
 }
 
-// GetIssue returns a single issue with its notes and related MRs.
-func (c *Client) GetIssue(iid int64) (messages.GitLabIssue, []messages.GitLabNote, []messages.GitLabIssueMR, error) {
-	issue, _, err := c.Raw.Issues.GetIssue(c.ProjectID, iid)
+// GetIssue returns a single issue with its notes, related MRs,
+// typed linked items, and work-item children. The issue body itself
+// (including Status / Parent and the bundled linked / children sets)
+// comes from a single GraphQL round trip via GetWorkItemBundle so the
+// per-detail refresh doesn't clobber widgets fetched by the bulk sync.
+// Notes and related MRs stay on REST endpoints — they have no widget
+// representation and the existing helpers are good enough.
+func (c *Client) GetIssue(iid int64) (
+	messages.GitLabIssue,
+	[]messages.GitLabNote,
+	[]messages.GitLabIssueMR,
+	[]messages.GitLabLinkedItem,
+	[]messages.GitLabChildItem,
+	error,
+) {
+	bundle, err := c.GetWorkItemBundle(iid)
 	if err != nil {
-		return messages.GitLabIssue{}, nil, nil, fmt.Errorf("getting issue: %w", err)
+		return messages.GitLabIssue{}, nil, nil, nil, nil, fmt.Errorf("getting issue: %w", err)
+	}
+	if bundle == nil {
+		return messages.GitLabIssue{}, nil, nil, nil, nil, fmt.Errorf("issue %d not found", iid)
 	}
 
 	notesRaw, _, err := c.Raw.Notes.ListIssueNotes(c.ProjectID, iid, &gitlab.ListIssueNotesOptions{
@@ -130,7 +146,7 @@ func (c *Client) GetIssue(iid int64) (messages.GitLabIssue, []messages.GitLabNot
 		}
 	}
 
-	return convertIssue(issue), notes, relatedMRs, nil
+	return bundle.Issue, notes, relatedMRs, bundle.Linked, bundle.Children, nil
 }
 
 // CloseIssue closes an issue.
@@ -196,9 +212,11 @@ func convertIssues(raw []*gitlab.Issue) []messages.GitLabIssue {
 }
 
 func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
-	var assignee string
-	if len(issue.Assignees) > 0 {
-		assignee = issue.Assignees[0].Username
+	assignees := make([]string, 0, len(issue.Assignees))
+	for _, a := range issue.Assignees {
+		if a != nil {
+			assignees = append(assignees, a.Username)
+		}
 	}
 	labels := make([]string, 0, len(issue.Labels))
 	for _, l := range issue.Labels {
@@ -232,74 +250,94 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 		Iteration:      iteration,
 		IterationDates: iterationDates,
 		Author:         issue.Author.Username,
-		Assignee:       assignee,
+		Assignees:      assignees,
 		WebURL:         issue.WebURL,
 		CreatedAt:      safeTime(issue.CreatedAt),
 		UpdatedAt:      safeTime(issue.UpdatedAt),
 	}
 }
 
-// FormatIssueDetail formats an issue, related MRs, and notes for the detail pane.
-// width is used for word wrapping markdown content.
-func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, relatedMRs []messages.GitLabIssueMR, width int) string {
+// FormatIssueDetail formats an issue, its widgets, related MRs, and
+// notes for the detail pane. width is used for word wrapping markdown
+// content. linked + children are rendered as footer sections between
+// Related MRs and Comments; empty slices are skipped entirely.
+func FormatIssueDetail(
+	issue messages.GitLabIssue,
+	notes []messages.GitLabNote,
+	relatedMRs []messages.GitLabIssueMR,
+	linked []messages.GitLabLinkedItem,
+	children []messages.GitLabChildItem,
+	width int,
+) string {
 	markdownWidth = width
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "#%d %s [%s]\n", issue.IID, issue.Title, issue.State)
-	b.WriteString(strings.Repeat("─", 60) + "\n")
-
-	if issue.Assignee != "" {
-		fmt.Fprintf(&b, "Assignee:  %s\n", issue.Assignee)
+	iter := issue.Iteration
+	if iter != "" && issue.IterationDates != "" {
+		iter += "  (" + issue.IterationDates + ")"
 	}
-	fmt.Fprintf(&b, "Author:    %s\n", issue.Author)
-	if len(issue.Labels) > 0 {
-		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(issue.Labels, ", "))
+	// Row order mirrors GitLab's right column (State, Status,
+	// Assignees, Labels, Parent, Weight, Milestone, Iteration, Dates);
+	// Author / Updated / URL trail below since GitLab doesn't surface
+	// them in that column. Status / Parent / Weight / Dates come from
+	// the work-items API (not the standard issues API), so they emit
+	// as placeholders today — wiring is a follow-up.
+	rows := []labeled{
+		{"State", FormatState(issue.State)},
+		{"Status", issue.Status},
+		{"Assignees", strings.Join(issue.Assignees, ", ")},
+		{"Labels", strings.Join(issue.Labels, ", ")},
+		{"Parent", formatParent(issue.ParentIID, issue.ParentTitle, issue.WebURL)},
+		{"Milestone", issue.Milestone},
+		{"Iteration", iter},
+		{"Author", issue.Author},
+		{"Created", formatDateWithAge(issue.CreatedAt)},
+		{"Updated", formatDateWithAge(issue.UpdatedAt)},
+		{"URL", linkify(issue.WebURL, issue.WebURL)},
 	}
-	if issue.Milestone != "" {
-		fmt.Fprintf(&b, "Milestone: %s\n", issue.Milestone)
-	}
-	if issue.Iteration != "" {
-		iter := issue.Iteration
-		if issue.IterationDates != "" {
-			iter += " (" + issue.IterationDates + ")"
-		}
-		fmt.Fprintf(&b, "Iteration: %s\n", iter)
-	}
-	fmt.Fprintf(&b, "Created:   %s\n", issue.CreatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "Updated:   %s\n", issue.UpdatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "URL:       %s\n", issue.WebURL)
-
-	if len(relatedMRs) > 0 {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString("MERGE REQUESTS\n")
-		for _, mr := range relatedMRs {
-			stateIcon := "●"
-			switch mr.State {
-			case "merged":
-				stateIcon = "✓"
-			case "closed":
-				stateIcon = "✗"
-			}
-			fmt.Fprintf(&b, "  %s !%d %s [%s]\n", stateIcon, mr.IID, mr.Title, mr.State)
-			fmt.Fprintf(&b, "    %s\n", mr.SourceBranch)
-		}
-	}
+	b.WriteString(formatHeaderStrip(rows, width))
 
 	baseURL := projectBaseURL(issue.WebURL)
 	hostURL := gitlabHostURL(issue.WebURL)
 
 	if issue.Description != "" {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
+		b.WriteString("\n" + rule(width) + "\n")
 		b.WriteString(renderMarkdown(issue.Description, baseURL, hostURL, issue.ProjectID))
 	}
 
+	if len(relatedMRs) > 0 {
+		b.WriteString("\n" + rule(width) + "\n")
+		fmt.Fprintf(&b, "Related MRs (%d)\n", len(relatedMRs))
+		for _, mr := range relatedMRs {
+			icon := stateGlyph(mr.State)
+			row := fmt.Sprintf("%s !%d %s  [%s]", icon, mr.IID, mr.Title, mr.State)
+			fmt.Fprintf(&b, "  %s\n", linkify(row, mr.WebURL))
+			if mr.SourceBranch != "" {
+				fmt.Fprintf(&b, "      %s\n", mr.SourceBranch)
+			}
+		}
+	}
+
+	if len(children) > 0 {
+		b.WriteString("\n" + rule(width) + "\n")
+		b.WriteString(formatChildItems(children))
+	}
+
+	if len(linked) > 0 {
+		b.WriteString("\n" + rule(width) + "\n")
+		b.WriteString(formatLinkedItems(linked))
+	}
+
 	if len(notes) > 0 {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString("COMMENTS\n")
-		b.WriteString(strings.Repeat("─", 60) + "\n")
-		for _, note := range notes {
-			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body, baseURL, hostURL, issue.ProjectID))
+		b.WriteString("\n" + rule(width) + "\n")
+		fmt.Fprintf(&b, "Comments (%d)\n", len(notes))
+		for i, note := range notes {
+			if i > 0 {
+				b.WriteString("\n" + commentSep() + "\n")
+			}
+			fmt.Fprintf(&b, "\n@%s  %s\n\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
+			b.WriteString(strings.TrimRight(renderMarkdown(note.Body, baseURL, hostURL, issue.ProjectID), "\n"))
+			b.WriteByte('\n')
 		}
 	}
 

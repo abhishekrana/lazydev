@@ -223,6 +223,23 @@ var (
 				Background(SolBase2).
 				Padding(0, 2)
 
+	// DetailHeaderActiveStyle is the focused-state title row of the
+	// detail pane. Same colors as ActiveTabStyle but without horizontal
+	// padding — the title (e.g. "#2571 Add retention…") sits flush at
+	// the left edge.
+	DetailHeaderActiveStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(SolBase3).
+				Background(SolBlue)
+
+	// DetailHeaderInactiveStyle is the unfocused counterpart. Still
+	// bold — the title is meant to stand out whether the pane has
+	// focus or not.
+	DetailHeaderInactiveStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(SolBase00).
+					Background(SolBase2)
+
 	TabBarStyle = lipgloss.NewStyle().
 			BorderBottom(true).
 			BorderStyle(lipgloss.NormalBorder()).

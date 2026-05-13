@@ -1,6 +1,7 @@
 package tabs
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,46 +10,58 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
+	"github.com/abhishek-rana/lazydev/internal/claude"
+	"github.com/abhishek-rana/lazydev/internal/export"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
+	"github.com/abhishek-rana/lazydev/internal/query"
 	"github.com/abhishek-rana/lazydev/internal/ui"
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// MRsTab displays GitLab merge requests.
+// MRsTab displays GitLab merge requests sourced from the local cache.
 type MRsTab struct {
 	client          *gitlabpkg.Client
+	store           *cachepkg.Store
+	syncer          *cachepkg.Syncer
+	opts            *Options
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
+	queryline       components.QueryLine
 	modal           components.Modal
 	focusSidebar    bool
 	width           int
 	height          int
 	selectedIID     int64
 	mrs             []messages.GitLabMR
+	queryExpr       string
 	notification    string
 	pendingCtrlW    bool
-	refreshS        int
 	fetchSeq        uint64
 	pendingFetch    string
 	needsAutoSelect bool
 }
 
 // NewMRsTab creates a new GitLab Merge Requests tab.
-func NewMRsTab(client *gitlabpkg.Client, refreshS int) *MRsTab {
+func NewMRsTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer, opts *Options) *MRsTab {
+	if opts == nil {
+		opts = &Options{}
+	}
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
-	if refreshS <= 0 {
-		refreshS = 30
-	}
 	return &MRsTab{
 		client:       client,
+		store:        store,
+		syncer:       syncer,
+		opts:         opts,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
+		queryline:    components.NewQueryLine(),
 		modal:        components.NewModal(),
 		focusSidebar: true,
-		refreshS:     refreshS,
 	}
 }
 
@@ -65,11 +78,12 @@ func (t *MRsTab) SetSize(width, height int) {
 	t.sidebar.SetSize(sidebarWidth, height)
 	t.sidebar.SetYOffset(2)
 	t.detailPane.SetSize(rightWidth, height)
+	t.detailPane.SetYOffset(2)
 	t.modal.SetSize(width, height)
 }
 
 func (t *MRsTab) Init() tea.Cmd {
-	return tea.Batch(t.fetchMRs(), t.tickRefresh())
+	return t.fetchMRs()
 }
 
 func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
@@ -85,7 +99,7 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		t.mrs = nil
-		var containers []messages.Container
+		var containers []messages.SidebarItem
 		for _, mr := range msg.Mine {
 			t.mrs = append(t.mrs, mr)
 			containers = append(containers, mrToContainer(mr, "My MRs"))
@@ -125,7 +139,8 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		detail := gitlabpkg.FormatMRDetail(msg.mr, msg.notes, t.detailPane.Width())
-		t.detailPane.SetContent(fmt.Sprintf("!%d %s", msg.mr.IID, msg.mr.Title), detail)
+		title := gitlabpkg.FormatMRTitle(msg.mr)
+		t.detailPane.SetContent(title, detail)
 		return t, nil
 
 	case messages.MRActionMsg:
@@ -133,6 +148,9 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("%s failed: %v", msg.Action, msg.Err)
 		} else {
 			t.notification = msg.Action + " done"
+		}
+		if t.syncer != nil {
+			t.syncer.SyncNow()
 		}
 		return t, t.fetchMRs()
 
@@ -148,8 +166,34 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
-	case mrRefreshTickMsg:
-		return t, tea.Batch(t.fetchMRs(), t.tickRefresh())
+	case messages.CacheUpdatedMsg:
+		if msg.Kind == "mrs" {
+			return t, t.fetchMRs()
+		}
+		return t, nil
+
+	case messages.ExportDoneMsg:
+		if msg.Err != nil {
+			t.notification = fmt.Sprintf("%s export failed: %v", msg.Channel, msg.Err)
+			return t, nil
+		}
+		switch msg.Channel {
+		case "clipboard":
+			t.notification = fmt.Sprintf("copied %d items to clipboard", msg.Items)
+		case "file":
+			t.notification = fmt.Sprintf("wrote %d items to %s", msg.Items, msg.Path)
+		case "pipe":
+			t.notification = fmt.Sprintf("piped %d items to %s", msg.Items, t.opts.LLMCommand)
+		}
+		return t, nil
+
+	case messages.ClaudeDispatchMsg:
+		if msg.Err != nil {
+			t.notification = fmt.Sprintf("claude: %v", msg.Err)
+		} else {
+			t.notification = msg.Note
+		}
+		return t, nil
 
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
@@ -186,6 +230,21 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, nil
 
 	case tea.KeyPressMsg:
+		if t.queryline.Visible() {
+			esc, commit, cmd := t.queryline.Update(msg)
+			if esc {
+				t.queryline.Clear()
+				t.queryExpr = ""
+				return t, t.fetchMRs()
+			}
+			if commit {
+				t.queryline.Hide()
+				return t, nil
+			}
+			t.queryExpr = t.queryline.Value()
+			return t, tea.Batch(cmd, t.fetchMRs())
+		}
+
 		s := msg.String()
 		if t.pendingCtrlW {
 			t.pendingCtrlW = false
@@ -196,10 +255,26 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
+		case "/":
+			t.queryline.Show()
+			return t, nil
+		case "y":
+			return t, t.exportToClipboard()
+		case "Y":
+			return t, t.exportToFile()
+		case "X":
+			return t, t.exportToLLM()
+		case "C":
+			return t, dispatchClaude(t.opts, claude.ModeInteractive, t.buildExportItems())
+		case "P":
+			return t, dispatchClaude(t.opts, claude.ModeOneShot, t.buildExportItems())
 		case "r":
-			t.notification = "Refreshing..."
+			if t.syncer != nil {
+				t.syncer.SyncNow()
+				t.notification = "Refreshing..."
+			}
 			return t, t.fetchMRs()
-		case "ctrl+w", "ctrl+W":
+		case "ctrl+w", "ctrl+W": //nolint:goconst // key names
 			t.pendingCtrlW = true
 			return t, nil
 		case "alt+w", "alt+W": //nolint:goconst // key names
@@ -275,6 +350,10 @@ func (t *MRsTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 		if mr := t.findSelectedMR(); mr != nil {
 			return t, t.commentOnMR(mr.IID)
 		}
+	case msg.String() == "T":
+		if mr := t.findSelectedMR(); mr != nil {
+			return t, t.toggleAIAssignee(mr)
+		}
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
@@ -294,6 +373,9 @@ func (t *MRsTab) View() string {
 	right := t.detailPane.View()
 
 	view := joinHorizontal(left, right, t.height)
+	if ql := t.queryline.View(); ql != "" {
+		view = ql + "\n" + view
+	}
 	if t.modal.Visible() {
 		return t.modal.View()
 	}
@@ -312,18 +394,88 @@ func (t *MRsTab) toggleFocus() {
 	t.detailPane.SetFocused(!t.focusSidebar)
 }
 
+// fetchMRs reads from the local cache, applying the current queryExpr
+// (if any) through the DSL parser. Partitions results into the legacy
+// MRListMsg groups so the Update handler keeps its grouping logic.
 func (t *MRsTab) fetchMRs() tea.Cmd {
 	return func() tea.Msg {
-		mine, review, allOpen, err := t.client.ListMyMRs()
+		ctx := context.Background()
+
+		env := query.Env{Me: t.client.Username, AI: t.opts.AIUser}
+		expr := query.Parse(t.queryExpr, env)
+
+		// If the user narrowed to issues, return empty here — the
+		// Issues tab will pick up the same expression.
+		if expr.Kind == "issue" {
+			return messages.MRListMsg{}
+		}
+
+		f := expr.Filter
+		if f.State == "" {
+			f.State = "open"
+		}
+		if f.Limit == 0 {
+			f.Limit = 1000
+		}
+		if !expr.UpdatedAfter.IsZero() {
+			f.UpdatedAfter = expr.UpdatedAfter
+		}
+		if !expr.UpdatedBefore.IsZero() {
+			f.UpdatedBefore = expr.UpdatedBefore
+		}
+
+		all, err := t.store.ListMRs(ctx, f)
+		if err != nil {
+			return messages.MRListMsg{Err: err}
+		}
+
+		// Structured filters → single flat group.
+		if expr.Filter.Assignee != "" || expr.Filter.Author != "" ||
+			len(expr.Filter.Labels) > 0 || expr.Filter.Text != "" {
+			return messages.MRListMsg{AllOpen: all}
+		}
+
+		trackedNames := make(map[string]bool, len(t.client.Usernames))
+		for _, u := range t.client.Usernames {
+			trackedNames[u] = true
+		}
+		var mine, review, allOpen []messages.GitLabMR
+		seenMine := make(map[int64]bool)
+		seenReview := make(map[int64]bool)
+		for _, mr := range all {
+			if trackedNames[mr.Author] {
+				mine = append(mine, mr)
+				seenMine[mr.IID] = true
+			}
+		}
+		for _, mr := range all {
+			if seenMine[mr.IID] {
+				continue
+			}
+			for _, rv := range mr.Reviewers {
+				if trackedNames[rv] {
+					review = append(review, mr)
+					seenReview[mr.IID] = true
+					break
+				}
+			}
+		}
+		for _, mr := range all {
+			if !seenMine[mr.IID] && !seenReview[mr.IID] {
+				allOpen = append(allOpen, mr)
+			}
+		}
 		return messages.MRListMsg{
 			Mine:            mine,
 			ReviewRequested: review,
 			AllOpen:         allOpen,
-			Err:             err,
 		}
 	}
 }
 
+// selectMR paints from the cache instantly, then refreshes from the
+// live API in parallel. The later API result overwrites the cached
+// paint; both share fetchSeq for staleness rejection.
 func (t *MRsTab) selectMR(id string) tea.Cmd {
 	var iid int64
 	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck,gosec // best effort
@@ -331,10 +483,24 @@ func (t *MRsTab) selectMR(id string) tea.Cmd {
 	t.fetchSeq++
 	seq := t.fetchSeq
 
-	return func() tea.Msg {
+	cacheCmd := func() tea.Msg {
+		ctx := context.Background()
+		cached, notes, err := t.store.GetMR(ctx, iid)
+		if err != nil || cached == nil {
+			return nil
+		}
+		return mrDetailResultMsg{seq: seq, mr: *cached, notes: notes}
+	}
+	apiCmd := func() tea.Msg {
 		mr, notes, err := t.client.GetMR(iid)
+		if err == nil {
+			ctx := context.Background()
+			_ = t.store.UpsertMRs(ctx, []messages.GitLabMR{mr})
+			_ = t.store.UpsertNotes(ctx, "mr", iid, notes)
+		}
 		return mrDetailResultMsg{seq: seq, mr: mr, notes: notes, err: err}
 	}
+	return tea.Batch(cacheCmd, apiCmd)
 }
 
 func (t *MRsTab) approveMR(iid int64) tea.Cmd {
@@ -365,10 +531,35 @@ func (t *MRsTab) reopenMR(iid int64) tea.Cmd {
 	}
 }
 
+// toggleAIAssignee flips the MR assignee between the user and the
+// configured AI user.
+func (t *MRsTab) toggleAIAssignee(mr *messages.GitLabMR) tea.Cmd {
+	if t.opts.AIUser == "" {
+		t.notification = noAIUserMsg
+		return nil
+	}
+	aiID, ok := t.client.UserIDFor(t.opts.AIUser)
+	if !ok {
+		t.notification = "ai_user not in additional_users: " + t.opts.AIUser
+		return nil
+	}
+	iid := mr.IID
+	targetID := aiID
+	target := t.opts.AIUser
+	if containsString(mr.Assignees, t.opts.AIUser) {
+		targetID = t.client.UserID
+		target = t.client.Username
+	}
+	return func() tea.Msg {
+		err := t.client.AssignMR(iid, targetID)
+		return messages.MRActionMsg{Action: "assign to " + target, Err: err}
+	}
+}
+
 func (t *MRsTab) commentOnMR(iid int64) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		editor = "vim"
+		editor = defaultEditor
 	}
 	tmpFile := fmt.Sprintf("/tmp/lazydev-mr-comment-%d.md", iid)
 	_ = os.WriteFile(tmpFile, []byte(""), 0o600) //nolint:gosec // temp file
@@ -400,7 +591,88 @@ func (t *MRsTab) reviewInNeovim(mr *messages.GitLabMR) tea.Cmd {
 	})
 }
 
-type mrRefreshTickMsg struct{}
+// buildExportItems materializes the marked MRs (or the cursor item if
+// none are marked) into ExportItems with notes loaded from the cache.
+func (t *MRsTab) buildExportItems() []export.ExportItem {
+	picks := t.sidebar.MarkedItems()
+	if len(picks) == 0 {
+		if cur, ok := t.sidebar.SelectedItem(); ok {
+			picks = append(picks, cur)
+		}
+	}
+	if len(picks) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	out := make([]export.ExportItem, 0, len(picks))
+	for _, p := range picks {
+		var iid int64
+		fmt.Sscanf(p.ID, "%d", &iid) //nolint:errcheck,gosec // best effort
+		mr, notes, err := t.store.GetMR(ctx, iid)
+		if err != nil || mr == nil {
+			continue
+		}
+		out = append(out, export.ExportItem{
+			Kind:  "mr",
+			MR:    mr,
+			Notes: notes,
+		})
+	}
+	return out
+}
+
+func (t *MRsTab) exportContent(items []export.ExportItem) string {
+	if t.opts.ExportFormat == "markdown" {
+		return export.BuildMarkdown(items)
+	}
+	return export.BuildClaudeXML(items)
+}
+
+func (t *MRsTab) exportToClipboard() tea.Cmd {
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	return func() tea.Msg {
+		if err := export.CopyClipboard(content); err != nil {
+			return messages.ExportDoneMsg{Channel: "clipboard", Items: len(items), Err: err}
+		}
+		return messages.ExportDoneMsg{Channel: "clipboard", Items: len(items)}
+	}
+}
+
+func (t *MRsTab) exportToFile() tea.Cmd {
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	return func() tea.Msg {
+		path, err := export.ToFile("ctx", content, ".md")
+		return messages.ExportDoneMsg{Channel: "file", Path: path, Items: len(items), Err: err}
+	}
+}
+
+func (t *MRsTab) exportToLLM() tea.Cmd {
+	if t.opts.LLMCommand == "" {
+		t.notification = "no llm_command configured"
+		return nil
+	}
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	cmdline := t.opts.LLMCommand
+	return func() tea.Msg {
+		_, err := export.PipeToCommand(cmdline, content)
+		return messages.ExportDoneMsg{Channel: "pipe", Items: len(items), Err: err}
+	}
+}
 
 type mrDetailFetchMsg struct{ itemID string }
 
@@ -409,12 +681,6 @@ type mrDetailResultMsg struct {
 	mr    messages.GitLabMR
 	notes []messages.GitLabNote
 	err   error
-}
-
-func (t *MRsTab) tickRefresh() tea.Cmd {
-	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {
-		return mrRefreshTickMsg{}
-	})
 }
 
 func (t *MRsTab) findSelectedMR() *messages.GitLabMR {
@@ -432,13 +698,13 @@ func (t *MRsTab) findSelectedMR() *messages.GitLabMR {
 	return nil
 }
 
-func mrToContainer(mr messages.GitLabMR, group string) messages.Container {
-	state := messages.StateRunning
+func mrToContainer(mr messages.GitLabMR, group string) messages.SidebarItem {
+	state := messages.StateOpen
 	switch mr.State {
 	case "merged":
-		state = messages.StateStopped
+		state = messages.StateMerged
 	case "closed":
-		state = messages.StateError
+		state = messages.StateClosed
 	}
 	pipeline := ""
 	switch mr.PipelineStatus {
@@ -454,7 +720,7 @@ func mrToContainer(mr messages.GitLabMR, group string) messages.Container {
 	if age != "" {
 		name += " " + age
 	}
-	return messages.Container{
+	return messages.SidebarItem{
 		ID:    fmt.Sprintf("%d", mr.IID),
 		Name:  name,
 		State: state,

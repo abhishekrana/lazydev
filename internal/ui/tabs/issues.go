@@ -1,6 +1,7 @@
 package tabs
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,18 +10,27 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	cachepkg "github.com/abhishek-rana/lazydev/internal/cache"
+	"github.com/abhishek-rana/lazydev/internal/claude"
+	"github.com/abhishek-rana/lazydev/internal/export"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
+	"github.com/abhishek-rana/lazydev/internal/query"
 	"github.com/abhishek-rana/lazydev/internal/ui"
 	"github.com/abhishek-rana/lazydev/internal/ui/components"
 	"github.com/abhishek-rana/lazydev/internal/ui/theme"
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// IssuesTab displays GitLab issues.
+// IssuesTab displays GitLab issues sourced from the local cache.
 type IssuesTab struct {
 	client          *gitlabpkg.Client
+	store           *cachepkg.Store
+	syncer          *cachepkg.Syncer
+	opts            *Options
 	sidebar         components.Sidebar
 	detailPane      components.DetailPane
+	queryline       components.QueryLine
 	modal           components.Modal
 	inputModal      components.InputModal
 	focusSidebar    bool
@@ -28,29 +38,32 @@ type IssuesTab struct {
 	height          int
 	selectedIID     int64
 	issues          []messages.GitLabIssue // flat list for lookup
+	queryExpr       string
 	notification    string
 	pendingCtrlW    bool
-	refreshS        int
-	fetchSeq        uint64 // incremented on each detail fetch, used to discard stale responses
+	fetchSeq        uint64 // detail-fetch staleness counter
 	pendingFetch    string // sidebar item ID waiting for debounce
 	needsAutoSelect bool
 }
 
 // NewIssuesTab creates a new GitLab Issues tab.
-func NewIssuesTab(client *gitlabpkg.Client, refreshS int) *IssuesTab {
+func NewIssuesTab(client *gitlabpkg.Client, store *cachepkg.Store, syncer *cachepkg.Syncer, opts *Options) *IssuesTab {
+	if opts == nil {
+		opts = &Options{}
+	}
 	sidebar := components.NewSidebar()
 	sidebar.SetFocused(true)
-	if refreshS <= 0 {
-		refreshS = 30
-	}
 	return &IssuesTab{
 		client:       client,
+		store:        store,
+		syncer:       syncer,
+		opts:         opts,
 		sidebar:      sidebar,
 		detailPane:   components.NewDetailPane(),
+		queryline:    components.NewQueryLine(),
 		modal:        components.NewModal(),
 		inputModal:   components.NewInputModal(),
 		focusSidebar: true,
-		refreshS:     refreshS,
 	}
 }
 
@@ -67,12 +80,16 @@ func (t *IssuesTab) SetSize(width, height int) {
 	t.sidebar.SetSize(sidebarWidth, height)
 	t.sidebar.SetYOffset(2)
 	t.detailPane.SetSize(rightWidth, height)
+	t.detailPane.SetYOffset(2)
 	t.modal.SetSize(width, height)
 	t.inputModal.SetSize(width, height)
 }
 
 func (t *IssuesTab) Init() tea.Cmd {
-	return tea.Batch(t.fetchIssues(), t.tickRefresh())
+	// Sidebar populates from the cache before any network call.
+	// The syncer (started by main.go) will emit CacheUpdatedMsg later
+	// to refresh the view as fresh data arrives.
+	return t.fetchIssues()
 }
 
 func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
@@ -93,7 +110,7 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			return t, nil
 		}
 		t.issues = nil
-		var containers []messages.Container
+		var containers []messages.SidebarItem
 		seenInSprint := make(map[int64]bool)
 
 		// Current Sprint group: issues belonging to the current iteration.
@@ -164,8 +181,9 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("issue detail: %v", msg.err)
 			return t, nil
 		}
-		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes, msg.relatedMRs, t.detailPane.Width())
-		t.detailPane.SetContent(fmt.Sprintf("#%d %s", msg.issue.IID, msg.issue.Title), detail)
+		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes, msg.relatedMRs, msg.linked, msg.children, t.detailPane.Width())
+		title := gitlabpkg.FormatIssueTitle(msg.issue)
+		t.detailPane.SetContent(title, detail)
 		return t, nil
 
 	case messages.IssueActionMsg:
@@ -173,6 +191,11 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("%s failed: %v", msg.Action, msg.Err)
 		} else {
 			t.notification = msg.Action + " done"
+		}
+		// Action committed → nudge syncer so the cache reflects the
+		// new state on the next tick.
+		if t.syncer != nil {
+			t.syncer.SyncNow()
 		}
 		return t, t.fetchIssues()
 
@@ -188,8 +211,34 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 		return t, nil
 
-	case issueRefreshTickMsg:
-		return t, tea.Batch(t.fetchIssues(), t.tickRefresh())
+	case messages.CacheUpdatedMsg:
+		if msg.Kind == "issues" {
+			return t, t.fetchIssues()
+		}
+		return t, nil
+
+	case messages.ExportDoneMsg:
+		if msg.Err != nil {
+			t.notification = fmt.Sprintf("%s export failed: %v", msg.Channel, msg.Err)
+			return t, nil
+		}
+		switch msg.Channel {
+		case "clipboard":
+			t.notification = fmt.Sprintf("copied %d items to clipboard", msg.Items)
+		case "file":
+			t.notification = fmt.Sprintf("wrote %d items to %s", msg.Items, msg.Path)
+		case "pipe":
+			t.notification = fmt.Sprintf("piped %d items to %s", msg.Items, t.opts.LLMCommand)
+		}
+		return t, nil
+
+	case messages.ClaudeDispatchMsg:
+		if msg.Err != nil {
+			t.notification = fmt.Sprintf("claude: %v", msg.Err)
+		} else {
+			t.notification = msg.Note
+		}
+		return t, nil
 
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
@@ -226,6 +275,22 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		return t, nil
 
 	case tea.KeyPressMsg:
+		// Queryline intercepts all keys while visible.
+		if t.queryline.Visible() {
+			esc, commit, cmd := t.queryline.Update(msg)
+			if esc {
+				t.queryline.Clear()
+				t.queryExpr = ""
+				return t, t.fetchIssues()
+			}
+			if commit {
+				t.queryline.Hide()
+				return t, nil
+			}
+			t.queryExpr = t.queryline.Value()
+			return t, tea.Batch(cmd, t.fetchIssues())
+		}
+
 		s := msg.String()
 		if t.pendingCtrlW {
 			t.pendingCtrlW = false
@@ -236,8 +301,24 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 		}
 
 		switch s {
+		case "/":
+			t.queryline.Show()
+			return t, nil
+		case "y":
+			return t, t.exportToClipboard()
+		case "Y":
+			return t, t.exportToFile()
+		case "X":
+			return t, t.exportToLLM()
+		case "C":
+			return t, dispatchClaude(t.opts, claude.ModeInteractive, t.buildExportItems())
+		case "P":
+			return t, dispatchClaude(t.opts, claude.ModeOneShot, t.buildExportItems())
 		case "r":
-			t.notification = "Refreshing..."
+			if t.syncer != nil {
+				t.syncer.SyncNow()
+				t.notification = "Refreshing..."
+			}
 			return t, t.fetchIssues()
 		case "ctrl+w", "ctrl+W":
 			t.pendingCtrlW = true
@@ -298,6 +379,14 @@ func (t *IssuesTab) updateSidebar(msg tea.KeyPressMsg) (ui.TabModel, tea.Cmd) {
 			})
 			return t, nil
 		}
+	case msg.String() == "T":
+		// Toggle assignee between self and configured AI user.
+		if issue := t.findSelectedIssue(); issue != nil {
+			return t, t.toggleAIAssignee(issue)
+		}
+	case msg.String() == "N":
+		// Quick-create issue assigned to AI.
+		return t, t.quickCreateForAI()
 	default:
 		prevItem, _ := t.sidebar.SelectedItem()
 		cmd := t.sidebar.Update(msg)
@@ -325,6 +414,9 @@ func (t *IssuesTab) View() string {
 
 	_ = rightWidth
 	view := joinHorizontal(left, right, t.height)
+	if ql := t.queryline.View(); ql != "" {
+		view = ql + "\n" + view
+	}
 	if t.modal.Visible() {
 		return t.modal.View()
 	}
@@ -344,19 +436,88 @@ func (t *IssuesTab) toggleFocus() {
 	t.detailPane.SetFocused(!t.focusSidebar)
 }
 
+// fetchIssues reads from the local cache, applying the current
+// queryExpr (if any) parsed via the DSL. The result is shaped into
+// the legacy IssueListMsg so the Update handler keeps its grouping
+// logic.
 func (t *IssuesTab) fetchIssues() tea.Cmd {
 	return func() tea.Msg {
-		assigned, created, mentioned, currentIter, err := t.client.ListMyIssues()
+		ctx := context.Background()
+
+		env := query.Env{Me: t.client.Username, AI: t.opts.AIUser}
+		expr := query.Parse(t.queryExpr, env)
+
+		// If the user explicitly narrowed to MRs, return empty here —
+		// the MRs tab will pick up the same expression.
+		if expr.Kind == "mr" {
+			return messages.IssueListMsg{}
+		}
+
+		f := expr.Filter
+		if f.State == "" {
+			f.State = "open"
+		}
+		if f.Limit == 0 {
+			f.Limit = 1000
+		}
+		if !expr.UpdatedAfter.IsZero() {
+			f.UpdatedAfter = expr.UpdatedAfter
+		}
+		if !expr.UpdatedBefore.IsZero() {
+			f.UpdatedBefore = expr.UpdatedBefore
+		}
+
+		all, err := t.store.ListIssues(ctx, f)
+		if err != nil {
+			return messages.IssueListMsg{Err: err}
+		}
+
+		// If the user filtered by a structured field, return one flat
+		// group: the partition heuristic ("Mine" vs "All") only makes
+		// sense for an unfiltered view.
+		if expr.Filter.Assignee != "" || expr.Filter.Author != "" ||
+			len(expr.Filter.Labels) > 0 || expr.Filter.Text != "" {
+			return messages.IssueListMsg{Created: all}
+		}
+
+		trackedNames := make(map[string]bool, len(t.client.Usernames))
+		for _, u := range t.client.Usernames {
+			trackedNames[u] = true
+		}
+		var assigned, created []messages.GitLabIssue
+		seen := make(map[int64]bool)
+		for _, iss := range all {
+			tracked := false
+			for _, name := range iss.Assignees {
+				if trackedNames[name] {
+					tracked = true
+					break
+				}
+			}
+			if tracked {
+				assigned = append(assigned, iss)
+				seen[iss.IID] = true
+			}
+		}
+		for _, iss := range all {
+			if seen[iss.IID] {
+				continue
+			}
+			if trackedNames[iss.Author] {
+				created = append(created, iss)
+			}
+		}
 		return messages.IssueListMsg{
-			Assigned:         assigned,
-			Created:          created,
-			Mentioned:        mentioned,
-			CurrentIteration: currentIter,
-			Err:              err,
+			Assigned: assigned,
+			Created:  created,
 		}
 	}
 }
 
+// selectIssue paints from the cache instantly, then refreshes from the
+// live API in parallel. The later API result overwrites the cached
+// paint when it arrives (typically 1–2s later); both share the same
+// fetchSeq so staleness checks reject results from earlier selections.
 func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 	var iid int64
 	fmt.Sscanf(id, "%d", &iid) //nolint:errcheck,gosec // best effort
@@ -364,10 +525,35 @@ func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 	t.fetchSeq++
 	seq := t.fetchSeq
 
-	return func() tea.Msg {
-		issue, notes, relatedMRs, err := t.client.GetIssue(iid)
-		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, relatedMRs: relatedMRs, err: err}
+	cacheCmd := func() tea.Msg {
+		ctx := context.Background()
+		cached, notes, related, err := t.store.GetIssue(ctx, iid)
+		if err != nil || cached == nil {
+			return nil
+		}
+		linked, _ := t.store.ListLinkedItems(ctx, iid)
+		children, _ := t.store.ListChildItems(ctx, iid)
+		return issueDetailResultMsg{
+			seq: seq, issue: *cached, notes: notes,
+			relatedMRs: related, linked: linked, children: children,
+		}
 	}
+	apiCmd := func() tea.Msg {
+		issue, notes, related, linked, children, err := t.client.GetIssue(iid)
+		if err == nil {
+			ctx := context.Background()
+			_ = t.store.UpsertIssues(ctx, []messages.GitLabIssue{issue})
+			_ = t.store.UpsertNotes(ctx, "issue", iid, notes)
+			_ = t.store.UpsertRelatedMRs(ctx, iid, related)
+			_ = t.store.UpsertLinkedItems(ctx, iid, linked)
+			_ = t.store.UpsertChildItems(ctx, iid, children)
+		}
+		return issueDetailResultMsg{
+			seq: seq, issue: issue, notes: notes,
+			relatedMRs: related, linked: linked, children: children, err: err,
+		}
+	}
+	return tea.Batch(cacheCmd, apiCmd)
 }
 
 func (t *IssuesTab) closeIssue(iid int64) tea.Cmd {
@@ -391,10 +577,110 @@ func (t *IssuesTab) assignToSelf(iid int64) tea.Cmd {
 	}
 }
 
+// toggleAIAssignee flips the assignee between the authenticated user
+// and cfg.GitLab.AIUser. Returns a no-op cmd if AIUser is unset.
+func (t *IssuesTab) toggleAIAssignee(issue *messages.GitLabIssue) tea.Cmd {
+	if t.opts.AIUser == "" {
+		t.notification = noAIUserMsg
+		return nil
+	}
+	aiID, ok := t.client.UserIDFor(t.opts.AIUser)
+	if !ok {
+		t.notification = "ai_user not in additional_users: " + t.opts.AIUser
+		return nil
+	}
+	iid := issue.IID
+	targetID := aiID
+	target := t.opts.AIUser
+	if containsString(issue.Assignees, t.opts.AIUser) {
+		targetID = t.client.UserID
+		target = t.client.Username
+	}
+	return func() tea.Msg {
+		err := t.client.AssignIssue(iid, targetID)
+		return messages.IssueActionMsg{Action: "assign to " + target, Err: err}
+	}
+}
+
+// quickCreateForAI spawns $EDITOR on a markdown template, creates the
+// resulting issue, and assigns it to the configured AI user.
+func (t *IssuesTab) quickCreateForAI() tea.Cmd {
+	if t.opts.AIUser == "" {
+		t.notification = noAIUserMsg
+		return nil
+	}
+	aiID, ok := t.client.UserIDFor(t.opts.AIUser)
+	if !ok {
+		t.notification = "ai_user not in additional_users: " + t.opts.AIUser
+		return nil
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = defaultEditor
+	}
+	tmpFile := fmt.Sprintf("/tmp/lazydev-new-issue-%d.md", time.Now().UnixNano())
+	template := "# Title here\n\n## Description\n\nDescribe the task for " + t.opts.AIUser + " below.\n"
+	_ = os.WriteFile(tmpFile, []byte(template), 0o600) //nolint:gosec // temp file
+
+	c := exec.Command(editor, tmpFile) //nolint:gosec,noctx // intentional editor open
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return messages.IssueActionMsg{Action: "quick-create", Err: err}
+		}
+		data, readErr := os.ReadFile(tmpFile) //nolint:gosec // temp file we just created
+		_ = os.Remove(tmpFile)
+		if readErr != nil {
+			return messages.IssueActionMsg{Action: "quick-create", Err: readErr}
+		}
+		title, body, ok := splitIssueDraft(string(data))
+		if !ok {
+			return messages.IssueActionMsg{Action: "quick-create",
+				Err: fmt.Errorf("template missing '# Title' line")}
+		}
+		newIssue, createErr := t.client.CreateIssue(title, body)
+		if createErr != nil {
+			return messages.IssueActionMsg{Action: "quick-create", Err: createErr}
+		}
+		if assignErr := t.client.AssignIssue(newIssue.IID, aiID); assignErr != nil {
+			return messages.IssueActionMsg{
+				Action: fmt.Sprintf("created #%d but assign failed", newIssue.IID),
+				Err:    assignErr,
+			}
+		}
+		// Optimistic cache upsert so the new issue shows up in the
+		// AI-queue view immediately.
+		newIssue.Assignees = []string{t.opts.AIUser}
+		ctx := context.Background()
+		_ = t.store.UpsertIssues(ctx, []messages.GitLabIssue{*newIssue})
+		return messages.IssueActionMsg{
+			Action: fmt.Sprintf("created #%d → %s", newIssue.IID, t.opts.AIUser),
+		}
+	})
+}
+
+// splitIssueDraft parses the editor's saved file into (title, body).
+// The first '# ' heading line is the title; remaining lines are the
+// body, with leading/trailing whitespace stripped.
+func splitIssueDraft(s string) (title, body string, ok bool) {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if strings.HasPrefix(ln, "# ") {
+			title = strings.TrimSpace(strings.TrimPrefix(ln, "# "))
+			body = strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+			if title == "" || title == "Title here" {
+				return "", "", false
+			}
+			return title, body, true
+		}
+	}
+	return "", "", false
+}
+
 func (t *IssuesTab) commentOnIssue(iid int64) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		editor = "vim"
+		editor = defaultEditor
 	}
 
 	tmpFile := fmt.Sprintf("/tmp/lazydev-comment-%d.md", iid)
@@ -415,26 +701,107 @@ func (t *IssuesTab) commentOnIssue(iid int64) tea.Cmd {
 	})
 }
 
-type issueRefreshTickMsg struct{}
+// buildExportItems materializes the marked issues (or the cursor item
+// if none are marked) into ExportItems with their notes and related
+// MRs loaded from the cache. Sub-millisecond at our data volumes.
+func (t *IssuesTab) buildExportItems() []export.ExportItem {
+	picks := t.sidebar.MarkedItems()
+	if len(picks) == 0 {
+		if cur, ok := t.sidebar.SelectedItem(); ok {
+			picks = append(picks, cur)
+		}
+	}
+	if len(picks) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	out := make([]export.ExportItem, 0, len(picks))
+	for _, p := range picks {
+		var iid int64
+		fmt.Sscanf(p.ID, "%d", &iid) //nolint:errcheck,gosec // best effort
+		issue, notes, related, err := t.store.GetIssue(ctx, iid)
+		if err != nil || issue == nil {
+			continue
+		}
+		out = append(out, export.ExportItem{
+			Kind:       "issue",
+			Issue:      issue,
+			Notes:      notes,
+			RelatedMRs: related,
+		})
+	}
+	return out
+}
+
+func (t *IssuesTab) exportContent(items []export.ExportItem) string {
+	if t.opts.ExportFormat == "markdown" {
+		return export.BuildMarkdown(items)
+	}
+	return export.BuildClaudeXML(items)
+}
+
+func (t *IssuesTab) exportToClipboard() tea.Cmd {
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	return func() tea.Msg {
+		if err := export.CopyClipboard(content); err != nil {
+			return messages.ExportDoneMsg{Channel: "clipboard", Items: len(items), Err: err}
+		}
+		return messages.ExportDoneMsg{Channel: "clipboard", Items: len(items)}
+	}
+}
+
+func (t *IssuesTab) exportToFile() tea.Cmd {
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	return func() tea.Msg {
+		path, err := export.ToFile("ctx", content, ".md")
+		return messages.ExportDoneMsg{Channel: "file", Path: path, Items: len(items), Err: err}
+	}
+}
+
+func (t *IssuesTab) exportToLLM() tea.Cmd {
+	if t.opts.LLMCommand == "" {
+		t.notification = "no llm_command configured"
+		return nil
+	}
+	items := t.buildExportItems()
+	if len(items) == 0 {
+		t.notification = nothingToExport
+		return nil
+	}
+	content := t.exportContent(items)
+	cmdline := t.opts.LLMCommand
+	return func() tea.Msg {
+		_, err := export.PipeToCommand(cmdline, content)
+		return messages.ExportDoneMsg{Channel: "pipe", Items: len(items), Err: err}
+	}
+}
 
 // issueDetailFetchMsg is a debounced trigger to fetch issue details.
 type issueDetailFetchMsg struct {
 	itemID string
 }
 
-// issueDetailResultMsg wraps IssueDetailMsg with a sequence number for staleness check.
+// issueDetailResultMsg wraps the cache- or API-sourced detail with a
+// sequence number for staleness check. Two results per click are
+// expected (cache first, API second); both pass the same `seq`.
 type issueDetailResultMsg struct {
 	seq        uint64
 	issue      messages.GitLabIssue
 	notes      []messages.GitLabNote
 	relatedMRs []messages.GitLabIssueMR
+	linked     []messages.GitLabLinkedItem
+	children   []messages.GitLabChildItem
 	err        error
-}
-
-func (t *IssuesTab) tickRefresh() tea.Cmd {
-	return tea.Tick(time.Duration(t.refreshS)*time.Second, func(time.Time) tea.Msg {
-		return issueRefreshTickMsg{}
-	})
 }
 
 func (t *IssuesTab) findSelectedIssue() *messages.GitLabIssue {
@@ -452,17 +819,17 @@ func (t *IssuesTab) findSelectedIssue() *messages.GitLabIssue {
 	return nil
 }
 
-func issueToContainer(issue messages.GitLabIssue, group string) messages.Container {
-	state := messages.StateRunning // open = green dot
+func issueToContainer(issue messages.GitLabIssue, group string) messages.SidebarItem {
+	state := messages.StateOpen
 	if issue.State == "closed" {
-		state = messages.StateStopped
+		state = messages.StateClosed
 	}
 	name := fmt.Sprintf("#%d %s", issue.IID, truncate(issue.Title, 40))
 	age := relativeTime(issue.UpdatedAt)
 	if age != "" {
 		name += " " + age
 	}
-	return messages.Container{
+	return messages.SidebarItem{
 		ID:    fmt.Sprintf("%d", issue.IID),
 		Name:  name,
 		State: state,

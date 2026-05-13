@@ -3,48 +3,41 @@ package app
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"time"
 
+	"github.com/abhishek-rana/lazydev/internal/cache"
+	"github.com/abhishek-rana/lazydev/internal/claude"
 	"github.com/abhishek-rana/lazydev/internal/config"
-	"github.com/abhishek-rana/lazydev/internal/docker"
 	gitlabpkg "github.com/abhishek-rana/lazydev/internal/gitlab"
-	"github.com/abhishek-rana/lazydev/internal/kube"
-	logpkg "github.com/abhishek-rana/lazydev/internal/log"
 )
 
 // SharedState holds backend clients shared across tabs.
 type SharedState struct {
-	DockerClient *docker.Client
-	KubeClient   *kube.Client
 	GitLabClient *gitlabpkg.Client
-	StreamMgr    *logpkg.StreamManager
+	Cache        *cache.Store
+	Syncer       *cache.Syncer
 	Config       *config.Config
+	ClaudeEnv    claude.Env
+	ClaudeStore  *claude.Store
 	Warnings     []string
+	ctx          context.Context
 	cancel       context.CancelFunc
 }
 
-// NewSharedState creates shared state, connecting to available backends.
+// NewSharedState creates shared state, connecting to available backends
+// and opening the cache. The Syncer is constructed but not started —
+// the caller is expected to wire its event channel into the UI program
+// first, then call SharedState.StartSync.
 func NewSharedState(cfg *config.Config) (*SharedState, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	state := &SharedState{
-		StreamMgr: logpkg.NewStreamManager(ctx),
-		Config:    cfg,
-		cancel:    cancel,
+		Config: cfg,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
-	// Try Docker.
-	dc, err := docker.NewClient(cfg.Docker.Host)
-	if err == nil {
-		state.DockerClient = dc
-	}
-
-	// Try Kubernetes.
-	kc, err := kube.NewClient(cfg.Kubernetes.Kubeconfig)
-	if err == nil {
-		state.KubeClient = kc
-	}
-
-	// Try GitLab.
 	gc, err := gitlabpkg.NewClient(cfg.GitLab.URL, cfg.GitLab.Token, cfg.GitLab.Project, cfg.GitLab.AdditionalUsers)
 	if err == nil {
 		state.GitLabClient = gc
@@ -52,16 +45,46 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 		state.Warnings = append(state.Warnings, fmt.Sprintf("GitLab: %v", err))
 	}
 
+	store, err := cache.Open(ctx, cfg.Cache.DBPath)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("cache: %w", err)
+	}
+	state.Cache = store
+
+	if state.GitLabClient != nil {
+		syncInterval := time.Duration(cfg.Cache.SyncIntervalS) * time.Second
+		window := time.Duration(cfg.Cache.PrefetchWindowDays) * 24 * time.Hour
+		state.Syncer = cache.NewSyncer(store, state.GitLabClient, syncInterval, window)
+	}
+
+	state.ClaudeEnv = claude.Discover(cfg.Claude.Binary)
+	if !state.ClaudeEnv.ClaudeAvailable() {
+		state.Warnings = append(state.Warnings,
+			"Claude Code: 'claude' not in PATH — C/P keys and Claude tab will be disabled")
+	}
+	if state.ClaudeEnv.RepoRoot != "" {
+		sessionFile := cfg.Claude.SessionFile
+		if !filepath.IsAbs(sessionFile) {
+			sessionFile = filepath.Join(state.ClaudeEnv.RepoRoot, sessionFile)
+		}
+		state.ClaudeStore = claude.NewStore(sessionFile)
+	}
+
 	return state, nil
+}
+
+// StartSync launches the syncer goroutine.
+func (s *SharedState) StartSync() {
+	if s.Syncer != nil {
+		s.Syncer.Start(s.ctx)
+	}
 }
 
 // Close cleans up all resources.
 func (s *SharedState) Close() {
 	s.cancel()
-	if s.StreamMgr != nil {
-		s.StreamMgr.StopAll()
-	}
-	if s.DockerClient != nil {
-		_ = s.DockerClient.Close()
+	if s.Cache != nil {
+		_ = s.Cache.Close()
 	}
 }

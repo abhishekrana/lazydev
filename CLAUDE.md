@@ -2,95 +2,113 @@
 
 ## Project Overview
 
-**lazydev** is a unified TUI for Docker, Kubernetes, and GitLab — view logs, monitor status, manage resources, track issues/MRs/pipelines in one terminal tool. Built with Go and Bubble Tea v2. Designed for LLM-assisted debugging workflows.
+**lazydev** is a terminal cockpit for working GitLab issues and MRs with Claude Code as a pair programmer. Three tabs — Issues, MRs, Claude (sessions). All reads come from a local SQLite mirror; a background Syncer keeps the cache fresh. The query DSL on `/`, multi-select export, and `C` / `P` Claude dispatch are the differentiating features. Built with Go and Bubble Tea v2; Solarized Light by default.
 
 ## Setup & Build
 
 ```bash
-./bootstrap.sh  # Install Taskfile runner
-task init        # Install dev tools (goimports, golangci-lint) and tidy deps
-task build       # Build binary (output: ./lazydev)
-task install     # Install binary to ~/.local/bin
-task run         # Build and run
-task clean       # Remove binary
-task tidy        # go mod tidy
-task format      # Format Go, Markdown, YAML files
-task lint        # Run golangci-lint
-task check       # Format + lint + build (run before committing)
-go build ./...   # Build all packages (check compilation)
+./bootstrap.sh    # install Taskfile runner
+task init         # install dev tools (goimports, golangci-lint) and tidy
+task build        # build binary (./lazydev)
+task install      # install to ~/.local/bin
+task run          # build + run
+task tidy         # go mod tidy
+task format       # format Go, Markdown, YAML
+task lint         # golangci-lint
+task check        # format + lint + build (run before committing)
+task wipe-cache   # rm ~/.local/state/lazydev/cache.db* (forces a fresh prefetch on next run)
+go build ./...    # compile-check all packages
 ```
 
 ## Project Structure
 
-- `cmd/lazydev/main.go` — Entry point, creates SharedState and root model
-- `internal/app/app.go` — SharedState: holds Docker/K8s clients, StreamManager, config
-- `internal/ui/root.go` — Root Bubble Tea model, handles tab switching, message broadcasting to all tabs
-- `internal/ui/theme/styles.go` — Solarized Light palette, all Lip Gloss styles
-- `internal/ui/theme/keys.go` — All keybindings (vim + arrow keys) to avoid import cycles
-- `internal/ui/components/` — Reusable widgets: TabBar, Sidebar, LogView, StatusBar, Modal, InputModal, DetailPane, Table, HelpOverlay, CmdPalette
-- `internal/ui/tabs/` — Tab models: DockerTab, KubeTab, LogsTab, DashboardTab, IssuesTab, MRsTab, PipelinesTab
-- `internal/gitlab/` — GitLab API wrapper: client (auth discovery from config/env/glab CLI), issues, merge requests, pipelines
-- `internal/ui/layout/` — Split pane layout helpers
-- `internal/docker/` — Docker SDK wrapper: client, container list/logs/inspect/stats, actions, compose grouping
-- `internal/kube/` — Kubernetes client-go wrapper: pods, deployments, services, events, describe, scale
-- `internal/log/` — Log subsystem: StreamManager (goroutine lifecycle), RingBuffer, filter, highlight, Docker header stripping, ANSI stripping
-- `internal/export/` — Log export: LinesToText, LinesToJSON, ToFile (/tmp), ToClipboardOSC52
-- `internal/config/` — YAML config struct and defaults
-- `internal/discovery/` — Auto-detect Docker daemon and kubeconfig at startup
-- `pkg/messages/` — All shared `tea.Msg` types used across packages
+- `cmd/lazydev/main.go` — entry: loads config, builds `SharedState`, wires `Syncer.Events()` into the Bubble Tea program before `StartSync`, constructs `Issues`/`MRs`/`Claude` tabs.
+- `internal/app/app.go` — `SharedState`: `GitLabClient`, `Cache` (SQLite store), `Syncer`, `Config`, `ClaudeEnv`, `ClaudeStore`. Fails closed if GitLab isn't configured; warns (does not fail) when `claude` isn't on PATH.
+- `internal/cache/` — SQLite mirror (`modernc.org/sqlite`, pure Go, no CGo).
+  - `schema.go` — `schemaSQL` defines `issues` / `mrs` / `notes` / `related_mrs` / `linked_items` / `child_items` / `meta` / `search_fts` (FTS5). `issues` carries `status` / `parent_iid` / `parent_title` / `assignees` (JSON) for the work-item widgets.
+  - `store.go` — open + scan + upsert. `currentSchemaVersion` and `migrate()` drop the data tables on a version mismatch; on next launch the Syncer repopulates from GitLab. New helpers: `UpsertLinkedItems` / `ListLinkedItems` / `UpsertChildItems` / `ListChildItems`.
+  - `sync.go` — `Source` interface (`ListMRsUpdatedAfter`, `StreamWorkItemsUpdatedAfter`) and `Syncer` (initial prefetch + 60 s ticks; publishes `SyncEvent` over a channel). Prefetch decision: empty cache ⇒ prefetch; otherwise incremental from `MaxIssueUpdatedAt` / `MaxMRUpdatedAt`.
+  - `filter.go` — `Filter` consumed by `ListIssues` / `ListMRs`; assignee match is JSON-LIKE against the `assignees` array.
+  - `search.go` — FTS5 helpers.
+- `internal/gitlab/` — GitLab API.
+  - `client.go` — auth discovery, project resolution from git remote, user ID resolution, **numeric `ProjectNumericID`** resolved at init for /uploads/ rewrites.
+  - `issues.go` — `GetIssue` returns `(issue, notes, relatedMRs, linkedItems, childItems, error)`; uses `GetWorkItemBundle` (GraphQL) for the issue body + widgets and `c.Raw.Notes.ListIssueNotes` + `ListMergeRequestsRelatedToIssue` (REST) for the rest. `FormatIssueDetail` renders the header strip + body + footer sections.
+  - `mergerequests.go` — REST MR sync + detail formatting.
+  - `workitems_graphql.go` — bulk + single-item GraphQL via `c.Raw.GraphQL.Do`. `StreamWorkItemsUpdatedAfter(t, onPage)` paginates `namespace.workItems` 50 at a time with every widget (`Description`, `Assignees`, `Labels`, `Milestone`, `Iteration`, `Status`, `Hierarchy`, `LinkedItems`) and yields a `messages.WorkItemPage` per page. `GetWorkItemBundle(iid)` is the per-detail variant.
+  - `sync.go` — `ListMRsUpdatedAfter` (REST). Issue sync is GraphQL now.
+  - `format.go` — `linkify` (OSC 8 + SGR underline + SolBlue), `formatChildItems`, `formatLinkedItems`, `formatParent` (derives parent URL via IID substitution), `formatDateWithAge`, header-strip helpers.
+- `internal/claude/` — Claude Code integration. `discovery.go` resolves `claude`/`tmux` binaries and the repo root; `prompt.go` composes the structured prompt from `ExportItem`s; `dispatch.go` runs one-shot (`claude -p`, spawned in the background, output to `.lazydev/claude-runs/<id>.log` mode `0600`; a goroutine waits on exit and flips the session record) or interactive (writes a `/bin/sh` launcher script then asks tmux to `new-window`/`new-session sh <path>` — keeps dispatch working under fish/nushell); `session.go` persists dispatched sessions to `.lazydev/sessions.json`. `finishSession` helper unifies the done/failed status update on both Start-failed and Wait-completed paths.
+- `internal/query/parser.go` — DSL parser. `assignee:@me label:bug state:open kind:mr updated:>7d` plus bare fuzzy terms. `@me` → authenticated user, `@ai` → `cfg.GitLab.AIUser`, `@none` → unassigned sentinel, `@any` → no filter. Tokens are AND'd; quoted strings preserved by `tokenize`.
+- `internal/export/` — `context.go` builds Claude-XML or markdown bundles from `ExportItem`s; `export.go` writes `/tmp/lazydev-*` files and emits OSC52 clipboard escapes; `tty.go` / `tty_windows.go` handle writing OSC52 to the controlling terminal.
+- `internal/config/` — YAML config + defaults. XDG-compliant paths: config at `~/.config/lazydev/config.yaml`, cache at `~/.local/state/lazydev/cache.db`. Default `cache.sync_interval_s = 60`.
+- `internal/ui/root.go` — `RootModel`, tab dispatch, help overlay, command palette (`:tab`, `:help`, `:q`), tab switching on `1`–`9`. Tracks the latest `SyncStatusMsg` and renders it as the right-side status-bar indicator (`prefetching N…` / `synced 5s ago` / `offline: <err>`). Broadcasts the data messages listed below to all tabs.
+- `internal/ui/components/` — `Sidebar` (grouped, multi-select with `Space`/`v`/`Esc`, `/` search), `DetailPane` (bold flush-left title + spacer row + scrollable content; Ctrl+click resolves an OSC 8 or plain URL on the clicked row with ±1 row tolerance), `QueryLine` (Esc clears, Enter commits while keeping the filter applied), `Modal`, `InputModal`, `HelpOverlay`, `CmdPalette`, `TabBar`, `StatusBar` (key hints + sync indicator).
+- `internal/ui/tabs/` — `IssuesTab`, `MRsTab`, `ClaudeTab`, plus `options.go` (shared `Options` bundle + `containsString` helper for multi-assignee comparisons) and `claude_dispatch.go` (`dispatchClaude` helper called from `C` / `P` in both Issues and MRs).
+- `pkg/messages/messages.go` — all cross-package `tea.Msg` types (broadcast set listed below). `GitLabIssue` carries `Status` / `ParentIID` / `ParentTitle` / `Assignees []string`; new types `GitLabLinkedItem`, `GitLabChildItem`, `WorkItemPage`.
 
 ## Key Architecture Decisions
 
-- **Bubble Tea v2 API**: `Init()` has no args, `View()` returns `tea.View` (not string), use `tea.KeyPressMsg` (not `tea.KeyMsg`), `AltScreen` is set on `tea.View` struct
-- **Import cycle prevention**: Styles and keys live in `internal/ui/theme/` — components import `theme`, not `ui`
-- **Log streaming**: Goroutines per source → fan-in channel → batched delivery (50ms/100 lines) → `LogBatchMsg` to Bubble Tea. Ring buffer bounds memory at 10k lines per source. Docker multiplexed stream headers and ANSI escape codes are stripped at the stream level.
-- **Message broadcasting**: Root model broadcasts data messages (LogBatchMsg, ContainerListMsg, ResourceStatsMsg, etc.) to ALL tabs, not just the active tab — ensures background tabs stay current.
-- **TabModel interface**: Defined in `internal/ui/root.go` — `Init()`, `Update()`, `View()`, `Title()`, `SetSize()`. Each tab returns `(ui.TabModel, tea.Cmd)` from Update.
-- **SharedState**: Passed by pointer to tabs. Contains Docker client, K8s client, GitLab client, StreamManager, config. Only backend state is shared; UI state is per-tab.
-- **GitLab auth discovery**: config → `GITLAB_TOKEN` env → `~/.config/glab-cli/config.yml` (handles `!!null` YAML tag). Project auto-detected from `git remote get-url origin`.
-- **Multi-user tracking**: GitLab tabs query for both the authenticated user and configured `additional_users` (e.g. bot accounts).
-- **Message types**: All in `pkg/messages/` to avoid circular dependencies between UI and backend packages. Exported message types are broadcast to all tabs; unexported (tab-local) types are only routed to the active tab.
-- **Tab activation**: Root sends `messages.TabActivatedMsg` when switching tabs. Tabs that need deferred work (e.g. auto-selecting first item after list loads) set a `needsAutoSelect` flag in the broadcast list handler and act on it in the `TabActivatedMsg` handler — never return commands producing local message types from broadcast handlers, as the results will be lost if the tab isn't active.
-- **Pane switching**: `Ctrl+W W` and `Alt+W` toggle focus between sidebar and log pane (vim-style). `Enter` on sidebar item also moves focus to logs.
-- **Two-key sequences**: `gg` (go to top) and `Ctrl+W w` use pending state flags (e.g., `pendingG`, `pendingCtrlW`).
+- **Bubble Tea v2 API**: `Init()` has no args, `View()` returns `tea.View` (not `string`), use `tea.KeyPressMsg` (not `tea.KeyMsg`). `AltScreen` and `MouseMode` are set on the `tea.View` struct in `RootModel.View()`.
+- **Cache-first reads**: tabs render from `cache.Store` on `Init()` with no network wait. The Syncer (started by `main.go` after the event-forwarding goroutine is wired up) does an initial prefetch over `cfg.Cache.PrefetchWindowDays`, then periodic `updated_after` polls. It publishes `SyncEvent` over a channel; `main.go`'s `forwardSyncEvents` converts each to `SyncStatusMsg` (status) and `CacheUpdatedMsg` (data) and `p.Send`s them into the program.
+- **Empty-cache prefetch trigger**: the Syncer decides "should I prefetch on startup?" by checking `MaxIssueUpdatedAt.IsZero() && MaxMRUpdatedAt.IsZero()`. No separate `last_full_sync` watermark — derived from the data itself, so a schema-drop never leaves the syncer out of sync with the (now-empty) tables. Force a fresh prefetch via `task wipe-cache`.
+- **Schema versioning**: `cache.currentSchemaVersion` (string) stored in `meta`. `migrate()` drops data tables on mismatch and lets `schemaSQL` recreate them; the Syncer repopulates from GitLab next start. Acceptable because the cache is a mirror, not the source of truth.
+- **GraphQL bulk fetch for issues**: one paginated `namespace.workItems(types: [ISSUE], first: 50, after: …, updatedAfter: …)` query returns title/state + every widget (Description, Assignees, Labels, Milestone, Iteration, Status, Hierarchy{parent,children}, LinkedItems). Replaces ~3N REST calls with ~N/50 GraphQL calls. Same query, single-item variant (`iids: [...]`), is reused for the per-detail freshness path. MR sync is still REST.
+- **Detail-pane fetch pattern**: `selectIssue` returns `tea.Batch(cacheCmd, apiCmd)`. Cache paints immediately (issue row + notes + related MRs + linked items + child items); API result (1–2 s later) overwrites and upserts back to the cache. Both share an incrementing `fetchSeq` so stale responses are discarded.
+- **Detail pane chrome + click**: title row is bold, flush-left (no horizontal padding); blank spacer row below it. Click handler translates `mouse.Y - yOffset - 2` to a content row, then runs `urlOnLine` (OSC 8 regex first, then plain http(s)); falls back to ±1 row to tolerate alignment drift between rendered visual rows and `\n`-split lines.
+- **OSC 8 hyperlinks**: every reference (`#NNN` / `!NNN`) and the URL row are wrapped via `gitlab.linkify(text, url)` — OSC 8 open + SGR underline + SolBlue + text + SGR reset + OSC 8 close. The terminal renders them underlined and clickable; lazydev's `Ctrl+click` extracts the URL from the OSC 8 escape on the clicked row.
+- **Status-bar sync indicator**: `RootModel.sync` stores the latest `SyncStatusMsg`; `formatSyncIndicator` renders `starting…` (pre-event) / `prefetching N…` / `syncing…` / `synced 5s ago` (green) / `offline: <err>` (red) on the right of the status bar.
+- **Sidebar debounce**: cursor movement schedules a `tea.Tick(150ms)` carrying the new item ID; the tick only triggers a detail fetch if `pendingFetch` still equals that ID — keeps rapid `j`/`k` from spamming GitLab.
+- **Multi-select**: `components.Sidebar` owns `marked map[string]bool` and `visualStart`. Tabs read it via `Marked()` when building export bundles, falling back to the cursor item if nothing is marked (`buildExportItems` in each tab).
+- **Multi-assignee**: `GitLabIssue.Assignees []string` (was scalar). Cache stores as JSON; `Filter.Assignee` selects via `LIKE '%"<user>"%'`. Tab AI-toggle uses `containsString(issue.Assignees, opts.AIUser)`. Export bundles join with `, `.
+- **Tab activation**: root sends `messages.TabActivatedMsg` when switching. Tabs that need deferred work after a list arrives (e.g. auto-selecting the first item) set a `needsAutoSelect` flag in the list handler and act on it in `TabActivatedMsg` — never return commands producing local message types from broadcast handlers, since the result is dropped if the tab isn't active.
+- **Broadcast set**: `RootModel.Update` broadcasts these messages to every tab so background tabs stay current: `ExecFinishedMsg`, `IssueListMsg`, `IssueDetailMsg`, `IssueActionMsg`, `MRListMsg`, `MRDetailMsg`, `MRActionMsg`, `CacheUpdatedMsg`, `SyncStatusMsg`, `ClaudeDispatchMsg`, `ClaudeSessionsReloadMsg`. All other messages route only to the active tab.
+- **TabModel interface** (`internal/ui/root.go`): `Init()`, `Update() (TabModel, tea.Cmd)`, `View() string`, `Title()`, `SetSize()`. Optional `Notifier` interface lets tabs surface status-bar messages.
+- **GitLab auth discovery**: config → `GITLAB_TOKEN` env → `~/.config/glab-cli/config.yml` (handles `!!null` YAML tag). Project auto-detected from `git remote get-url origin`. `Client.ProjectNumericID` resolved at init via `Projects.GetProject` for /uploads/ rewrites. App refuses to start if no GitLab client is built.
+- **Multi-user tracking**: queries fan out across `cfg.GitLab.AdditionalUsers` plus the authenticated user; sidebar grouping uses the union to decide "Assigned to me/bot" vs "Other".
+- **Claude dispatch (`C` / `P`)**: shared `dispatchClaude` in `tabs/claude_dispatch.go` builds a structured prompt via `claude.Compose`, then calls `claude.DispatchInteractive` or `claude.DispatchOneShot`. Both return immediately and persist a `Session` record (status `running`) to `.lazydev/sessions.json` (`claude.Store`). `DispatchInteractive` writes a `/bin/sh` launcher script to `.lazydev/claude-prompts/<id>.sh` and asks tmux to run `sh <path>` via `new-window` (inside tmux) or `new-session` (outside) — going through `/bin/sh` rather than the user's `$SHELL` keeps POSIX `'\''` quoting working under fish/nushell. `DispatchOneShot` spawns `claude -p` in the background; a goroutine waits on exit and calls `finishSession` to flip status to `done`/`failed`. The `ClaudeTab` lists those records and re-attaches via `tmux attach`.
+- **Query DSL → cache**: the queryline emits an `Expression`; `Filter` goes straight to `cache.ListIssues`/`ListMRs`; `UpdatedAfter`/`UpdatedBefore` from `updated:` tokens narrow the result set; `Kind` ("issue" / "mr") short-circuits the wrong tab to an empty list so a single expression can target either tab. Unknown keys fall through as fuzzy text rather than errors. Enter on the queryline hides the line but keeps `queryExpr` applied; Esc clears.
+- **Two-key sequences**: `gg` (top) uses `pendingG`; `Ctrl+W w` (pane toggle) uses `pendingCtrlW`. Both reset on any unrelated keypress.
 
 ## Rules
 
-- **Never commit personal info**: no names, emails, IP addresses, tokens, or company references
-- **Solarized Light**: Test that text is readable on light background
-- **Keep it simple**: minimal dependencies, no over-engineering
-- **Keep code consistent across tabs**: All tabs (Docker, K8s, Issues, MRs, Pipelines) must follow the same patterns:
-  - Tab struct fields: `client`, `sidebar`, `detailPane`/`logView`, `modal`, `focusSidebar`, `width`, `height`, `selectedIID`/`selectedID`, `notification`, `pendingCtrlW`, `refreshS`, `fetchSeq`, `pendingFetch`, `needsAutoSelect`
-  - `Init()` returns `tea.Batch(fetchData(), tickRefresh())`
-  - `Update()` handles: list msg → populate sidebar + set `needsAutoSelect`; `TabActivatedMsg` → auto-select; detail result msg → set detail pane; action msg → show notification + re-fetch; refresh tick → re-fetch + re-tick
-  - Sidebar actions: `Enter` select, `o` open browser, `s` close/reopen toggle, `c` comment via `$EDITOR`
-  - Pane switching: `Ctrl+W W` / `Alt+W` via `pendingCtrlW` flag and `toggleFocus()`
-  - Detail fetch debounce: 150ms tick with `pendingFetch` + `fetchSeq` for stale response discard
-  - Destructive actions use confirmation modal (`modal.Show` with callback)
-  - Sidebar groups: "My X" → "Other X" → "All X" pattern
-  - When adding a feature to one tab, check if it applies to other tabs and add it there too
+- **Never commit personal info**: no names, emails, IP addresses, tokens, or company references.
+- **Solarized Light**: test that text is readable on a light background.
+- **Keep scope tight**: this repo deliberately dropped Docker/K8s/Logs/Dashboard/Pipelines (commit `e08cd1f`). Don't reintroduce them. Three tabs only.
+- **Keep code consistent across the GitLab tabs** (Issues, MRs):
+  - Struct fields: `client`, `store`, `syncer`, `opts`, `sidebar`, `detailPane`, `queryline`, `modal` (+ `inputModal` for Issues), `focusSidebar`, `width`, `height`, `selectedIID`, item slice, `queryExpr`, `notification`, `pendingCtrlW`, `fetchSeq`, `pendingFetch`, `needsAutoSelect`.
+  - `Init()` returns `fetchIssues()` / `fetchMRs()` (cache read, no network).
+  - `Update()` handles: list msg → populate sidebar + flag `needsAutoSelect`; detail-fetch tick → kick off `selectX`; detail result → set detail pane (discard stale `seq`); action msg → notification + `syncer.SyncNow()` + refetch; `CacheUpdatedMsg{Kind:…}` → refetch; `ClaudeDispatchMsg` → notification; `ExportDoneMsg` → notification.
+  - Sidebar keys: `Enter` open detail, `o` open browser, `s` close/reopen toggle, `c` comment via `$EDITOR`. Plus `a` (Issues only), `T` toggle AI assignee (both), `N` quick-create-for-AI (Issues only), `R`/`m`/`A` (MRs only).
+  - Global keys per tab: `/` query line, `r` refresh (nudges syncer), `y`/`Y`/`X` export, `C`/`P` Claude dispatch, `Ctrl+W W` / `Alt+W` pane focus toggle.
+  - Detail fetch debounce: 150 ms tick, `pendingFetch` + `fetchSeq` for stale-response rejection.
+  - Destructive actions use the confirmation modal (`modal.Show` with callback).
+  - When adding a feature to one tab, check if it applies to the other and add it there too.
 
 ## Conventions
 
-- Do not add Co-Authored-By lines to commit messages
-- Docker containers are grouped by `com.docker.compose.project` label; standalone containers go to "standalone" group
-- Keybindings support both vim-style (hjkl) and arrow keys simultaneously via `key.NewBinding` with multiple keys
-- Config path: `~/.config/lazydev/config.yaml` (XDG compliant)
-- Sidebar width is 15% of terminal width (GitLab tabs use 25%)
-- Log lines are truncated to pane width (no wrap by default); `w` toggles wrap mode
-- Markdown content in GitLab detail panes is rendered via glamour with `WithWordWrap(paneWidth)`
-- Relative GitLab URLs are resolved to absolute URLs; `/uploads/` paths use `/-/project/{id}/uploads/` format
+- **Do not add Co-Authored-By lines to commit messages.**
+- **Plans before implementation**: write the plan to `docs/` on the feature branch and commit before starting work (see auto-memory `Plan docs workflow`).
+- Keybindings accept both vim (`hjkl`) and arrow keys via `key.NewBinding` with multiple keys.
+- Sidebar width is 25 % of terminal width (minimum 30 cols).
+- Config path: `~/.config/lazydev/config.yaml`. Cache: `~/.local/state/lazydev/cache.db`. Claude dispatch artifacts (repo-relative): `.lazydev/sessions.json` (ledger), `.lazydev/claude-runs/<id>.log` (one-shot output, mode `0600`), `.lazydev/claude-prompts/<id>.md` (composed prompt) and `<id>.sh` (launcher script).
+- Markdown in detail panes is rendered via glamour with `WithWordWrap(paneWidth)`.
+- Relative GitLab URLs are resolved to absolute; `/uploads/` paths use `/-/project/{id}/uploads/` format.
+- Export bundles default to `claude-xml` (Anthropic's recommended multi-document framing); switch to `markdown` via `export.format` when piping to non-Claude tools.
 
 ## Current Status
 
-All 8 phases complete, plus UX polish:
+Issues/MRs focus + SQLite cache + Claude Code handoff is the v2 product. Recent changes (newest first):
 
-- Phase 1: Docker tab with live log tailing, sidebar, search, container actions
-- Phase 2: Collapsible groups, confirmation modal, inspect detail pane
-- Phase 3: Kubernetes tab with pod management, describe, YAML
-- Phase 4: Log level filtering (f key), search highlighting, All Logs merged tab
-- Phase 5: Dashboard tab with sortable table, Docker stats (CPU/mem)
-- Phase 6: Exec shell (x), port-forward (p), scale deployment (S)
-- Phase 7: Help overlay (?), command palette (:), goreleaser config
-- UX polish: Solarized Light theme, vim gg/G navigation, sidebar `/` search, Ctrl+W W pane switching, cursor highlight in log pane, wrap toggle (w), log export (y/Y/e/E/o), Docker header & ANSI stripping, mouse click/scroll support, 1-9 tab selection
-- Phase 8: GitLab integration — Issues (sprint grouping, related MRs), MRs (approve, merge, DiffviewOpen review), Pipelines (jobs, live job logs, retry/cancel), markdown rendering (glamour solarized), Ctrl+click URLs, tab auto-select on activation
+- **Cut saved views** (`be28ecf`) — dropped `internal/views/` package, `ApplyViewMsg`, palette commands `:save`/`:view`/`:del`, number-key view-recall. Query DSL on `/` covers the same use case; number keys `1`–`9` now just switch tabs.
+- **Claude dispatch hardening** — one-shot runs in background (`09efe9a`), interactive uses `/bin/sh` launcher script for fish/nushell portability (`1d3da6a`), log file mode `0600` (`abcbc57`), unified `finishSession` for done/failed (`76ab912`).
+- **Syncer cleanup** — dropped dead `stopped` atomic (`1dfe5bd`); documented the partial-prefetch self-heal (`2479075`).
+- **OSC 8 + per-row Ctrl+click** (`ee15110`, `4afeab0`, `7bc79f9`, `0134e37`) — every `#NNN` / `!NNN` reference and URL is a clickable, underlined-blue hyperlink; click handler tolerates ±1 row drift.
+- **GraphQL bulk fetch + work-item widgets** (`b5b2788`, `d6c8076`, `18366eb`, `bdc28b8`) — schema v3 (status, parent, linked_items, child_items); `namespace.workItems` with widgets replaces REST issue sync.
+- **Multi-assignee** (`626629d`) — `GitLabIssue.Assignees []string`, JSON column in cache, propagated through UI/export/AI-toggle.
+- **Detail-pane header strip** (`03ade6f`, `dad4b5c`, `63cbb1d`, `65d15d0`, `95210c6`) — gh-style header rows with `(Xd ago)` dates; flush-left bold title; blank spacer; `—` placeholders for empty fields.
+- **Status-bar sync indicator** (`c5668c2`) — `starting…` / `prefetching N…` / `synced 5s ago` / `offline: <err>`.
+- **QueryLine commit-on-Enter** (`14de496`) — Enter hides the line while keeping the filter applied; Esc still clears.
+- **Sync simplification** (`06e1961`, `9c24142`) — dropped `last_full_sync`; empty-cache check drives prefetch; added `task wipe-cache`; default sync 60 s configurable via `cache.sync_interval_s`.
+- **Claude Code integration** (`60db54e`) — `C` interactive, `P` one-shot, sessions tab.
+- **SQLite cache + Syncer + Query DSL** — the v2 backbone.
+- **Scope cut** (`e08cd1f`) — Docker/K8s/Logs/Dashboard/Pipelines removed.

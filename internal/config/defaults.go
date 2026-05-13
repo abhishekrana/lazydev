@@ -1,44 +1,54 @@
 package config
 
-import "time"
+import (
+	"os"
+	"path/filepath"
+	"time"
+)
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Docker: DockerConfig{
-			Host:             "", // auto-detect
-			ComposeDetection: true,
-		},
-		Kubernetes: KubernetesConfig{
-			Kubeconfig: "", // auto-detect
-			Context:    "", // current context
-		},
 		GitLab: GitLabConfig{
-			RefreshIntervalS: 30,
+			RefreshIntervalS: 20,
+		},
+		Cache: CacheConfig{
+			DBPath:             defaultCacheDBPath(),
+			SyncIntervalS:      60,
+			PrefetchWindowDays: 30,
+		},
+		Export: ExportConfig{
+			Format:            "claude-xml",
+			LLMCommand:        "claude -p",
+			IncludeComments:   true,
+			IncludeRelatedMRs: "stub",
 		},
 		UI: UIConfig{
-			Theme:            "dark",
-			SidebarWidth:     30,
-			LogBufferSize:    10000,
-			BatchIntervalMs:  50,
-			ShowTimestamps:   true,
-			WrapLines:        false,
-			RefreshIntervalS: 5,
+			Theme:        "light",
+			SidebarWidth: 30,
+			WrapLines:    false,
+		},
+		Claude: ClaudeConfig{
+			Binary:      "claude",
+			SpecDir:     "docs/specs",
+			PromptsDir:  ".lazydev/prompts",
+			SessionFile: ".lazydev/sessions.json",
+			TmuxSession: "lazydev-claude",
 		},
 	}
 }
 
 // DefaultRefreshInterval returns the default tick interval.
 func DefaultRefreshInterval() time.Duration {
-	return 5 * time.Second
+	return 20 * time.Second
 }
 
-// DefaultBatchInterval returns the default log batch interval.
-func DefaultBatchInterval() time.Duration {
-	return 50 * time.Millisecond
-}
-
-// DefaultLogBufferSize returns the default ring buffer size.
-func DefaultLogBufferSize() int {
-	return 10000
+// defaultCacheDBPath returns the XDG-compliant cache DB path.
+func defaultCacheDBPath() string {
+	dir := os.Getenv("XDG_STATE_HOME")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(dir, "lazydev", "cache.db")
 }

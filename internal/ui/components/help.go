@@ -96,55 +96,46 @@ func (h HelpOverlay) View() string {
 			},
 		},
 		{
-			title: "Logs",
+			title: "Query (DSL on /)",
 			keys: [][2]string{
-				{"/", "Search logs"},
-				{"f", "Cycle log level filter"},
-				{"w", "Toggle line wrap on/off"},
-				{"y", "Yank current line to clipboard"},
-				{"Y", "Yank all filtered lines to clipboard"},
-				{"e", "Export filtered logs to text file"},
-				{"E", "Export filtered logs to JSON file"},
-				{"o", "Open logs in $EDITOR"},
+				{"/", "Query line: assignee:@me label:bug state:open …"},
+				{"r", "Refresh now (sync nudge)"},
+				{"1–3", "Switch tab"},
 			},
 		},
 		{
-			title: "Docker/K8s",
+			title: "Select & export",
 			keys: [][2]string{
-				{"r", "Restart container/pod"},
-				{"s", "Stop container"},
-				{"d", "Delete container/pod"},
-				{"D", "Describe / inspect (toggle)"},
-				{"x", "Exec shell"},
-				{"p", "Port forward (K8s)"},
-				{"S", "Scale deployment (K8s)"},
+				{"Space", "Mark current item"},
+				{"v", "Visual range (toggle)"},
+				{"Esc", "Clear marks"},
+				{"y", "Copy marked → clipboard (OSC52)"},
+				{"Y", "Write marked → /tmp/lazydev-ctx-*.md"},
+				{"X", "Pipe marked → llm_command (claude -p)"},
 			},
 		},
 		{
-			title: "GitLab Issues",
+			title: "Issues",
 			keys: [][2]string{
-				{"s", "Close / reopen issue"},
-				{"c", "Comment (opens $EDITOR)"},
-				{"a", "Assign to self"},
-				{"o", "Open in browser"},
-			},
-		},
-		{
-			title: "GitLab MRs",
-			keys: [][2]string{
-				{"r", "Review in neovim (DiffviewOpen)"},
-				{"m", "Merge (with confirmation)"},
-				{"A", "Approve"},
+				{"Enter", "Open detail"},
 				{"s", "Close / reopen"},
 				{"c", "Comment (opens $EDITOR)"},
+				{"a", "Assign to self"},
+				{"T", "Toggle assignee self ↔ ai_user"},
+				{"N", "Quick-create assigned to ai_user"},
 				{"o", "Open in browser"},
 			},
 		},
 		{
-			title: "GitLab Pipelines",
+			title: "Merge Requests",
 			keys: [][2]string{
-				{"R", "Retry failed pipeline"},
-				{"C", "Cancel running pipeline"},
+				{"Enter", "Open detail"},
+				{"R", "Review in neovim (DiffviewOpen)"},
+				{"m", "Merge (with confirmation)"},
+				{"A", "Approve"},
+				{"T", "Toggle assignee self ↔ ai_user"},
+				{"s", "Close / reopen"},
+				{"c", "Comment (opens $EDITOR)"},
 				{"o", "Open in browser"},
 			},
 		},
@@ -179,4 +170,11 @@ func (h HelpOverlay) View() string {
 		Render(b.String())
 
 	return lipgloss.Place(h.width, h.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(s))
 }

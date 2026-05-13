@@ -1,79 +1,17 @@
+// Package export provides clipboard (OSC52) and tempfile helpers
+// used by the Claude context-export feature.
 package export
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
-
-	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
-
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
-// jsonLine is the structured JSON format for exported log lines.
-type jsonLine struct {
-	Timestamp string `json:"timestamp"`
-	Source    string `json:"source"`
-	Container string `json:"container"`
-	Level     string `json:"level"`
-	Text      string `json:"text"`
-	Group     string `json:"group,omitempty"`
-}
-
-// LinesToText formats log lines as plain text.
-func LinesToText(lines []messages.LogLine) string {
-	var b strings.Builder
-	for _, line := range lines {
-		if !line.Time.IsZero() {
-			b.WriteString(line.Time.Format("2006-01-02 15:04:05"))
-			b.WriteString(" ")
-		}
-		if line.SourceID != "" {
-			b.WriteString("[")
-			b.WriteString(line.SourceID)
-			b.WriteString("] ")
-		}
-		lvl := levelString(line.Level)
-		if lvl != "" {
-			b.WriteString(lvl)
-			b.WriteString(" ")
-		}
-		b.WriteString(stripANSI(line.Text))
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-// LinesToJSON formats log lines as newline-delimited JSON.
-func LinesToJSON(lines []messages.LogLine) string {
-	var b strings.Builder
-	for _, line := range lines {
-		jl := jsonLine{
-			Source:    line.Source,
-			Container: line.SourceID,
-			Level:     levelString(line.Level),
-			Text:      stripANSI(line.Text),
-		}
-		if !line.Time.IsZero() {
-			jl.Timestamp = line.Time.Format(time.RFC3339)
-		}
-		data, err := json.Marshal(jl)
-		if err != nil {
-			continue
-		}
-		b.Write(data)
-		b.WriteString("\n")
-	}
-	return b.String()
-}
 
 // ToFile writes content to a file in /tmp and returns the path.
 func ToFile(label, content, ext string) (string, error) {
-	// Sanitize label for filename.
 	safe := strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(label)
 	ts := time.Now().Format("20060102-150405")
 	filename := fmt.Sprintf("lazydev-%s-%s%s", safe, ts, ext)
@@ -85,12 +23,11 @@ func ToFile(label, content, ext string) (string, error) {
 	return path, nil
 }
 
-// ToClipboardOSC52 returns the OSC52 escape sequence to set the terminal clipboard.
+// ToClipboardOSC52 returns the OSC52 escape sequence to set the terminal
+// clipboard. Print the returned string to the controlling tty; works over
+// SSH and tmux when the host terminal supports OSC52.
 func ToClipboardOSC52(content string) string {
-	// OSC 52 : set clipboard
-	// Format: ESC ] 52 ; c ; <base64-content> ESC \
-	encoded := encodeBase64(content)
-	return fmt.Sprintf("\033]52;c;%s\033\\", encoded)
+	return fmt.Sprintf("\033]52;c;%s\033\\", encodeBase64(content))
 }
 
 func encodeBase64(s string) string {
@@ -124,26 +61,4 @@ func encodeBase64(s string) string {
 	}
 
 	return result.String()
-}
-
-func levelString(level messages.LogLevel) string {
-	switch level {
-	case messages.LogLevelDebug:
-		return "DEBUG"
-	case messages.LogLevelInfo:
-		return "INFO"
-	case messages.LogLevelWarn:
-		return "WARN"
-	case messages.LogLevelError:
-		return "ERROR"
-	case messages.LogLevelFatal:
-		return "FATAL"
-	default:
-		return ""
-	}
-}
-
-// stripANSI removes ANSI escape codes from a string.
-func stripANSI(s string) string {
-	return ansiRegex.ReplaceAllString(s, "")
 }

@@ -94,6 +94,14 @@ func (c *Client) GetMR(iid int64) (messages.GitLabMR, []messages.GitLabNote, err
 	return convertFullMR(mr), notes, nil
 }
 
+// AssignMR sets the assignee on a merge request.
+func (c *Client) AssignMR(iid int64, userID int64) error {
+	_, _, err := c.Raw.MergeRequests.UpdateMergeRequest(c.ProjectID, iid, &gitlab.UpdateMergeRequestOptions{
+		AssigneeIDs: gitlab.Ptr([]int64{userID}),
+	})
+	return err
+}
+
 // ApproveMR approves a merge request.
 func (c *Client) ApproveMR(iid int64) error {
 	_, _, err := c.Raw.MergeRequestApprovals.ApproveMergeRequest(c.ProjectID, iid, &gitlab.ApproveMergeRequestOptions{})
@@ -178,9 +186,11 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 	} else if mr.Pipeline != nil {
 		pipelineStatus = mr.Pipeline.Status
 	}
-	var assignee string
-	if mr.Assignee != nil {
-		assignee = mr.Assignee.Username
+	assignees := make([]string, 0, len(mr.Assignees))
+	for _, a := range mr.Assignees {
+		if a != nil {
+			assignees = append(assignees, a.Username)
+		}
 	}
 	return messages.GitLabMR{
 		ID:             mr.ID,
@@ -192,7 +202,7 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 		SourceBranch:   mr.SourceBranch,
 		TargetBranch:   mr.TargetBranch,
 		Author:         mr.Author.Username,
-		Assignee:       assignee,
+		Assignees:      assignees,
 		Reviewers:      reviewers,
 		Labels:         labels,
 		PipelineStatus: pipelineStatus,
@@ -209,49 +219,68 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 	markdownWidth = width
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "!%d %s [%s]\n", mr.IID, mr.Title, mr.State)
-	b.WriteString(strings.Repeat("─", 60) + "\n")
-
-	fmt.Fprintf(&b, "Branch:    %s → %s\n", mr.SourceBranch, mr.TargetBranch)
-	fmt.Fprintf(&b, "Author:    %s\n", mr.Author)
-	if mr.Assignee != "" {
-		fmt.Fprintf(&b, "Assignee:  %s\n", mr.Assignee)
-	}
-	if len(mr.Reviewers) > 0 {
-		fmt.Fprintf(&b, "Reviewers: %s\n", strings.Join(mr.Reviewers, ", "))
-	}
-	if len(mr.Labels) > 0 {
-		fmt.Fprintf(&b, "Labels:    %s\n", strings.Join(mr.Labels, ", "))
-	}
+	var pipeline string
 	if mr.PipelineStatus != "" {
-		icon := PipelineStatusIcon(mr.PipelineStatus)
-		fmt.Fprintf(&b, "Pipeline:  %s %s\n", icon, mr.PipelineStatus)
+		pipeline = pipelineStatusIcon(mr.PipelineStatus) + " " + mr.PipelineStatus
 	}
+	var changes string
 	if mr.ChangesCount != "" {
-		fmt.Fprintf(&b, "Changes:   %s files\n", mr.ChangesCount)
+		changes = mr.ChangesCount + " files"
 	}
-	fmt.Fprintf(&b, "Created:   %s\n", mr.CreatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "Updated:   %s\n", mr.UpdatedAt.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "URL:       %s\n", mr.WebURL)
+	rows := []labeled{
+		{"State", FormatState(mr.State)},
+		{"Assignees", strings.Join(mr.Assignees, ", ")},
+		{"Reviewers", strings.Join(mr.Reviewers, ", ")},
+		{"Labels", strings.Join(mr.Labels, ", ")},
+		{"Source", mr.SourceBranch},
+		{"Target", mr.TargetBranch},
+		{"Pipeline", pipeline},
+		{"Changes", changes},
+		{"Author", mr.Author},
+		{"Created", formatDateWithAge(mr.CreatedAt)},
+		{"Updated", formatDateWithAge(mr.UpdatedAt)},
+		{"URL", linkify(mr.WebURL, mr.WebURL)},
+	}
+	b.WriteString(formatHeaderStrip(rows, width))
 
 	baseURL := projectBaseURL(mr.WebURL)
 	hostURL := gitlabHostURL(mr.WebURL)
 
 	if mr.Description != "" {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
+		b.WriteString("\n" + rule(width) + "\n")
 		b.WriteString(renderMarkdown(mr.Description, baseURL, hostURL, mr.ProjectID))
 	}
 
 	if len(notes) > 0 {
-		b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
-		b.WriteString("DISCUSSION\n")
-		b.WriteString(strings.Repeat("─", 60) + "\n")
-		for _, note := range notes {
-			fmt.Fprintf(&b, "\n@%s  %s\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
-			b.WriteString(renderMarkdown(note.Body, baseURL, hostURL, mr.ProjectID))
-			b.WriteString("\n")
+		b.WriteString("\n" + rule(width) + "\n")
+		fmt.Fprintf(&b, "Discussion (%d)\n", len(notes))
+		for i, note := range notes {
+			if i > 0 {
+				b.WriteString("\n" + commentSep() + "\n")
+			}
+			fmt.Fprintf(&b, "\n@%s  %s\n\n", note.Author, note.CreatedAt.Format("2006-01-02 15:04"))
+			b.WriteString(strings.TrimRight(renderMarkdown(note.Body, baseURL, hostURL, mr.ProjectID), "\n"))
+			b.WriteByte('\n')
 		}
 	}
 
 	return b.String()
+}
+
+// pipelineStatusIcon returns a single-glyph icon for a pipeline status.
+func pipelineStatusIcon(status string) string {
+	switch status {
+	case "success":
+		return "✓"
+	case "failed":
+		return "✗"
+	case "running", "pending", "created", "preparing", "waiting_for_resource":
+		return "◌"
+	case "canceled", "skipped":
+		return "⊘"
+	case "manual":
+		return "⚙"
+	default:
+		return "•"
+	}
 }
