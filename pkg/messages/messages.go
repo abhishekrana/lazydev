@@ -68,6 +68,16 @@ type GitLabChildItem struct {
 	WebURL   string
 }
 
+// WorkItemPage is one page of the bulk-fetch result returned by the
+// GraphQL workitems paginator. Linked and Children are indexed by
+// the parent issue IID so callers can route them into their own
+// per-issue tables.
+type WorkItemPage struct {
+	Issues   []GitLabIssue
+	Linked   map[int64][]GitLabLinkedItem
+	Children map[int64][]GitLabChildItem
+}
+
 // GitLabMR represents a GitLab merge request.
 type GitLabMR struct {
 	ID, IID, ProjectID int64

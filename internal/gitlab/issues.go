@@ -89,11 +89,27 @@ func (c *Client) ListMyIssues() (assigned, created, mentioned []messages.GitLabI
 	return assigned, created, nil, currentIter, nil
 }
 
-// GetIssue returns a single issue with its notes and related MRs.
-func (c *Client) GetIssue(iid int64) (messages.GitLabIssue, []messages.GitLabNote, []messages.GitLabIssueMR, error) {
-	issue, _, err := c.Raw.Issues.GetIssue(c.ProjectID, iid)
+// GetIssue returns a single issue with its notes, related MRs,
+// typed linked items, and work-item children. The issue body itself
+// (including Status / Parent and the bundled linked / children sets)
+// comes from a single GraphQL round trip via GetWorkItemBundle so the
+// per-detail refresh doesn't clobber widgets fetched by the bulk sync.
+// Notes and related MRs stay on REST endpoints — they have no widget
+// representation and the existing helpers are good enough.
+func (c *Client) GetIssue(iid int64) (
+	messages.GitLabIssue,
+	[]messages.GitLabNote,
+	[]messages.GitLabIssueMR,
+	[]messages.GitLabLinkedItem,
+	[]messages.GitLabChildItem,
+	error,
+) {
+	bundle, err := c.GetWorkItemBundle(iid)
 	if err != nil {
-		return messages.GitLabIssue{}, nil, nil, fmt.Errorf("getting issue: %w", err)
+		return messages.GitLabIssue{}, nil, nil, nil, nil, fmt.Errorf("getting issue: %w", err)
+	}
+	if bundle == nil {
+		return messages.GitLabIssue{}, nil, nil, nil, nil, fmt.Errorf("issue %d not found", iid)
 	}
 
 	notesRaw, _, err := c.Raw.Notes.ListIssueNotes(c.ProjectID, iid, &gitlab.ListIssueNotesOptions{
@@ -130,7 +146,7 @@ func (c *Client) GetIssue(iid int64) (messages.GitLabIssue, []messages.GitLabNot
 		}
 	}
 
-	return convertIssue(issue), notes, relatedMRs, nil
+	return bundle.Issue, notes, relatedMRs, bundle.Linked, bundle.Children, nil
 }
 
 // CloseIssue closes an issue.

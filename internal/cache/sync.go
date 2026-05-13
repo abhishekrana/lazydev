@@ -17,8 +17,10 @@ import (
 // Keeping this an interface lets cache stay independent of the gitlab
 // package (and of the heavy gitlab client-go dependency).
 type Source interface {
-	ListIssuesUpdatedAfter(t time.Time, state string) ([]messages.GitLabIssue, error)
 	ListMRsUpdatedAfter(t time.Time, state string) ([]messages.GitLabMR, error)
+	// StreamWorkItemsUpdatedAfter replaces ListIssuesUpdatedAfter: one
+	// GraphQL request per page returns title/state/widgets together.
+	StreamWorkItemsUpdatedAfter(t time.Time, onPage func(messages.WorkItemPage) error) error
 }
 
 // SyncEvent is what the Syncer publishes after every tick. main.go
@@ -156,23 +158,15 @@ func (s *Syncer) run(ctx context.Context) {
 }
 
 // prefetch paginates everything in the prefetchWindow into the cache.
-// Sends progress events as it goes and writes meta.last_full_sync on
-// successful completion.
+// Sends progress events as it goes.
 func (s *Syncer) prefetch(ctx context.Context) error {
 	since := time.Now().Add(-s.prefetchWindow)
 
 	s.emit(SyncEvent{State: "prefetching", LastSyncAt: time.Now()})
 
-	issues, err := s.source.ListIssuesUpdatedAfter(since, "all")
-	if err != nil {
+	if err := s.syncIssuesBulk(ctx, since); err != nil {
 		return err
 	}
-	if err := s.store.UpsertIssues(ctx, issues); err != nil {
-		return err
-	}
-	s.emit(SyncEvent{State: "prefetching", Kind: "issues",
-		Progress:   formatProgress(len(issues), len(issues)),
-		LastSyncAt: time.Now()})
 
 	mrs, err := s.source.ListMRsUpdatedAfter(since, "all")
 	if err != nil {
@@ -185,6 +179,33 @@ func (s *Syncer) prefetch(ctx context.Context) error {
 		Progress:   formatProgress(len(mrs), len(mrs)),
 		LastSyncAt: time.Now()})
 	return nil
+}
+
+// syncIssuesBulk streams work-items pages from the source, upserting
+// each page (issues + their linked / child relations) in turn. Shared
+// between prefetch and incremental — only the `since` anchor differs.
+func (s *Syncer) syncIssuesBulk(ctx context.Context, since time.Time) error {
+	total := 0
+	return s.source.StreamWorkItemsUpdatedAfter(since, func(page messages.WorkItemPage) error {
+		if err := s.store.UpsertIssues(ctx, page.Issues); err != nil {
+			return err
+		}
+		for iid, items := range page.Linked {
+			if err := s.store.UpsertLinkedItems(ctx, iid, items); err != nil {
+				return err
+			}
+		}
+		for iid, items := range page.Children {
+			if err := s.store.UpsertChildItems(ctx, iid, items); err != nil {
+				return err
+			}
+		}
+		total += len(page.Issues)
+		s.emit(SyncEvent{State: "prefetching", Kind: "issues",
+			Progress:   formatProgress(total, total),
+			LastSyncAt: time.Now()})
+		return nil
+	})
 }
 
 // incremental fetches items updated after the cached high-water mark
@@ -222,14 +243,27 @@ func (s *Syncer) syncKind(ctx context.Context, kind string) error {
 		if !anchor.IsZero() {
 			anchor = anchor.Add(-time.Minute) // overlap window
 		}
-		items, fetchErr := s.source.ListIssuesUpdatedAfter(anchor, "all")
-		if fetchErr != nil {
-			return fetchErr
-		}
-		if err := s.store.UpsertIssues(ctx, items); err != nil {
+		// Count via callback so we can avoid buffering the full
+		// result set; syncIssuesBulk emits its own progress events.
+		if err := s.source.StreamWorkItemsUpdatedAfter(anchor, func(page messages.WorkItemPage) error {
+			if err := s.store.UpsertIssues(ctx, page.Issues); err != nil {
+				return err
+			}
+			for iid, items := range page.Linked {
+				if err := s.store.UpsertLinkedItems(ctx, iid, items); err != nil {
+					return err
+				}
+			}
+			for iid, items := range page.Children {
+				if err := s.store.UpsertChildItems(ctx, iid, items); err != nil {
+					return err
+				}
+			}
+			count += len(page.Issues)
+			return nil
+		}); err != nil {
 			return err
 		}
-		count = len(items)
 
 	case "mrs":
 		anchor, err = s.store.MaxMRUpdatedAt(ctx)

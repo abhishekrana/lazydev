@@ -11,40 +11,6 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// ListIssuesUpdatedAfter paginates project issues with updated_at > t,
-// across all authors and assignees. Pass a zero time to fetch every
-// issue (used for the first-run prefetch). State "" or "all" returns
-// open + closed; pass "opened" or "closed" to narrow.
-//
-// Results are returned in ascending updated_at order so callers can
-// upsert in batches and persist their high-water mark progressively.
-func (c *Client) ListIssuesUpdatedAfter(t time.Time, state string) ([]messages.GitLabIssue, error) {
-	var out []messages.GitLabIssue
-	var page int64 = 1
-	for {
-		opts := &gitlab.ListProjectIssuesOptions{
-			ListOptions: gitlab.ListOptions{Page: page, PerPage: 100},
-			OrderBy:     gitlab.Ptr("updated_at"),
-			Sort:        gitlab.Ptr("asc"),
-		}
-		if state != "" && state != "all" {
-			opts.State = gitlab.Ptr(state)
-		}
-		if !t.IsZero() {
-			opts.UpdatedAfter = &t
-		}
-		raw, resp, err := c.Raw.Issues.ListProjectIssues(c.ProjectID, opts)
-		if err != nil {
-			return out, err
-		}
-		out = append(out, convertIssues(raw)...)
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		page = resp.NextPage
-	}
-}
-
 // ListMRsUpdatedAfter paginates project merge requests with
 // updated_at > t. Same shape and semantics as ListIssuesUpdatedAfter.
 // Returns MRs in ascending updated_at order. State filtering accepts

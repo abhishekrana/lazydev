@@ -538,12 +538,14 @@ func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 		return issueDetailResultMsg{seq: seq, issue: *cached, notes: notes, relatedMRs: related}
 	}
 	apiCmd := func() tea.Msg {
-		issue, notes, related, err := t.client.GetIssue(iid)
+		issue, notes, related, linked, children, err := t.client.GetIssue(iid)
 		if err == nil {
 			ctx := context.Background()
 			_ = t.store.UpsertIssues(ctx, []messages.GitLabIssue{issue})
 			_ = t.store.UpsertNotes(ctx, "issue", iid, notes)
 			_ = t.store.UpsertRelatedMRs(ctx, iid, related)
+			_ = t.store.UpsertLinkedItems(ctx, iid, linked)
+			_ = t.store.UpsertChildItems(ctx, iid, children)
 		}
 		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, relatedMRs: related, err: err}
 	}
