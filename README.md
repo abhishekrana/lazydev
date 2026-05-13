@@ -7,15 +7,18 @@ Built with Go and Bubble Tea v2. Solarized Light by default.
 ## Features
 
 - **Three tabs**: Issues, MRs, Claude (active sessions).
-- **Local SQLite cache** — every read renders from `~/.local/state/lazydev/cache.db` first; a background Syncer keeps it fresh. No network wait on startup, works offline for browsing.
-- **Query DSL on `/`** — `assignee:@me`, `assignee:@ai`, `label:bug`, `state:open`, `kind:mr`, `updated:>7d`, plus bare fuzzy terms over title/body/notes (FTS5). Tokens are AND'd; quoted strings preserved.
+- **Local SQLite cache** — every read renders from `~/.local/state/lazydev/cache.db` first; a background Syncer keeps it fresh. No network wait on startup, works offline for browsing. A sync indicator on the right of the status bar shows `starting…` / `prefetching N…` / `synced 5s ago` / `offline: <err>` in real time.
+- **GraphQL bulk sync** — one paginated `namespace.workItems` query per 50 issues returns title/state + every widget (Status, Parent, Children, Linked items, Description). A 200-item prefetch is ~4 requests instead of ~200.
+- **Rich detail pane** — `gh issue view`-style header strip (State, Status, Assignees, Labels, Parent, Milestone, Iteration, Author, Created, Updated, URL) + glamour-rendered body + footer sections for Related MRs, Child items, and Linked items (grouped `Blocked by` / `Blocks` / `Relates to`). Every `#NNN` / `!NNN` reference and URL is an OSC 8 hyperlink — `Ctrl+click` opens it in the browser.
+- **Query DSL on `/`** — `assignee:@me`, `assignee:@ai`, `label:bug`, `state:open`, `kind:mr`, `updated:>7d`, plus bare fuzzy terms over title/body/notes (FTS5). Tokens are AND'd; quoted strings preserved. `Enter` commits the filter without dropping it.
 - **Saved views** — number keys `1`–`9` recall views from `~/.config/lazydev/views.yaml`. Defaults seeded on first run: `mine`, `ai-queue`, `review`, `recent`. Manage via `:save <name> <expr>`, `:view <name>`, `:del <name>`.
 - **Multi-select** — `Space` to mark, `v` for visual range, `Esc` to clear. All export and Claude dispatch keys act on the marked set (or the cursor item if nothing is marked).
 - **Claude Code handoff** — `C` opens an interactive Claude session in a tmux window (or new tmux session if outside tmux); `P` runs `claude -p` one-shot and tees output to `.lazydev/claude-runs/<id>.log`. Both compose a structured prompt from the marked items.
 - **Sessions tab** — Claude tab lists dispatched sessions from `.lazydev/sessions.json`; `Enter` re-attaches, `o` opens the originating issue/MR, `L` opens the run log, `d` drops the record.
 - **AI handoff helpers** — `T` toggles assignee between self and the configured `ai_user`; `N` quick-creates an issue from a `$EDITOR` template assigned to `ai_user`.
+- **Multi-assignee aware** — items with multiple assignees are tracked correctly across the sidebar grouping, AI-toggle, and export bundles.
 - **Context export** — `y` copies marked items to clipboard via OSC52, `Y` writes to `/tmp/lazydev-ctx-*.md`, `X` pipes through `llm_command` (default `claude -p`). Default format is Claude-XML; markdown also supported.
-- **Markdown rendering** — issue/MR descriptions and comments rendered with glamour (solarized). `Ctrl+click` opens URLs in the browser.
+- **Markdown rendering** — issue/MR descriptions and comments rendered with glamour (solarized).
 - **MR review** — `R` on an MR opens neovim with `DiffviewOpen` against the target branch.
 - **Multi-user tracking** — track yourself plus `additional_users` (bot accounts) across issues and MRs.
 - **Vim + arrow keys** — `hjkl`, `gg` / `G`, `Ctrl+W W` / `Alt+W` to switch pane focus.
@@ -168,11 +171,10 @@ gitlab:
   project: "" # auto-detect from `git remote get-url origin`
   additional_users: [] # extra usernames to track (e.g. bot accounts)
   ai_user: "" # the GitLab username `@ai` resolves to
-  refresh_interval_s: 20
 
 cache:
   db_path: "" # default: $XDG_STATE_HOME/lazydev/cache.db
-  sync_interval_s: 60
+  sync_interval_s: 60 # incremental sync cadence
   prefetch_window_days: 30 # initial backfill window
 
 export:
@@ -199,22 +201,33 @@ Views file: `~/.config/lazydev/views.yaml`. Created on first run with defaults (
 ## Architecture
 
 ```
-cmd/lazydev/main.go     entry: builds SharedState, wires syncer events into Bubble Tea
+cmd/lazydev/main.go         entry: builds SharedState, wires syncer events into Bubble Tea
 internal/
-  app/                  SharedState: GitLab client, cache, syncer, views, Claude env/store
-  cache/                SQLite mirror (modernc.org/sqlite) + FTS5 search + Syncer goroutine
-  claude/               Claude Code: discovery, structured prompt, sessions store, dispatch
-  config/               YAML config + defaults
-  export/               OSC52 clipboard, file write, Claude-XML / markdown builders
-  gitlab/               GitLab client + issues/MRs/notes + updated_after sync helpers
-  query/                Query DSL parser (`assignee:@me label:bug state:open`)
-  views/                Saved-views YAML store (1–9 recall)
+  app/                      SharedState: GitLab client, cache, syncer, views, Claude env/store
+  cache/                    SQLite mirror (modernc.org/sqlite) + FTS5 search + Syncer goroutine
+                            schema v3: issues / mrs / notes / related_mrs / linked_items / child_items / search_fts
+  claude/                   Claude Code: discovery, structured prompt, sessions store, dispatch
+  config/                   YAML config + defaults
+  export/                   OSC52 clipboard, file write, Claude-XML / markdown builders
+  gitlab/                   GitLab client + issues/MRs/notes
+    workitems_graphql.go    paginated GraphQL bulk fetch for issues + widgets (status, parent, children, linked)
+    sync.go                 ListMRsUpdatedAfter (REST) — MR sync is still REST since work-items don't apply
+  query/                    Query DSL parser (`assignee:@me label:bug state:open`)
+  views/                    Saved-views YAML store (1–9 recall)
   ui/
-    root.go             RootModel, tab dispatch, command palette, view application
-    theme/              Lip Gloss styles + keybindings
-    components/         Sidebar (multi-select), DetailPane, QueryLine, Modal, etc.
-    tabs/               IssuesTab, MRsTab, ClaudeTab + shared Options + dispatchClaude
-pkg/messages/           Shared tea.Msg types (cross-package, avoids cycles)
+    root.go                 RootModel, tab dispatch, command palette, view application, sync indicator
+    theme/                  Lip Gloss styles + keybindings
+    components/             Sidebar (multi-select), DetailPane (OSC 8 + Ctrl+click), QueryLine, etc.
+    tabs/                   IssuesTab, MRsTab, ClaudeTab + shared Options + dispatchClaude
+pkg/messages/               Shared tea.Msg types (cross-package, avoids cycles)
+```
+
+## Cache hygiene
+
+The Syncer auto-handles incremental updates, but if a schema mismatch ever appears or you suspect drift from items deleted on GitLab:
+
+```bash
+task wipe-cache   # rm ~/.local/state/lazydev/cache.db*  → next run does a fresh prefetch
 ```
 
 ## Tech Stack
