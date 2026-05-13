@@ -268,7 +268,8 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		{"Iteration", iter},
 		{"Dates", ""},
 		{"Author", issue.Author},
-		{"Updated", issue.UpdatedAt.Format("2006-01-02 15:04")},
+		{"Created", formatDateWithAge(issue.CreatedAt)},
+		{"Updated", formatDateWithAge(issue.UpdatedAt)},
 		{"URL", issue.WebURL},
 	}
 	b.WriteString(formatHeaderStrip(rows, width))

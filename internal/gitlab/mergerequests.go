@@ -237,7 +237,8 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 		{"Pipeline", pipeline},
 		{"Changes", changes},
 		{"Author", mr.Author},
-		{"Updated", mr.UpdatedAt.Format("2006-01-02 15:04")},
+		{"Created", formatDateWithAge(mr.CreatedAt)},
+		{"Updated", formatDateWithAge(mr.UpdatedAt)},
 		{"URL", mr.WebURL},
 	}
 	b.WriteString(formatHeaderStrip(rows, width))

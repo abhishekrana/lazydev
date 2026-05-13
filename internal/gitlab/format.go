@@ -3,9 +3,34 @@ package gitlab
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
+
+// formatDateWithAge renders a timestamp as "2026-05-04 00:06 (9d ago)".
+// Returns an empty string for zero times.
+func formatDateWithAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	stamp := t.Format("2006-01-02 15:04")
+	d := time.Since(t)
+	var rel string
+	switch {
+	case d < 0:
+		rel = "in the future"
+	case d < time.Minute:
+		rel = "just now"
+	case d < time.Hour:
+		rel = fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		rel = fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		rel = fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+	return fmt.Sprintf("%s  (%s)", stamp, rel)
+}
 
 // FormatIssueTitle is the single-line title rendered in the detail
 // pane's header row above the metadata strip. State lives in the
