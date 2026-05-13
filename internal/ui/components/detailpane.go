@@ -17,6 +17,15 @@ var urlPattern = regexp.MustCompile(`https?://[^\s)\]>]+`)
 // OSC sequences: \x1b]...(\x07|\x1b\\), CSI sequences: \x1b[...letter
 var ansiPattern = regexp.MustCompile(`\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-9;]*[a-zA-Z]`)
 
+// osc8Pattern captures the URL out of an OSC 8 hyperlink opener:
+//
+//	ESC ] 8 ; ; <URL> ESC \
+//
+// The terminator can be either ESC \ (ST) or BEL. Used so Ctrl+click
+// on `#123 Built out ...` rows (where the line text has no plain
+// http://) can still resolve to the link's underlying URL.
+var osc8Pattern = regexp.MustCompile(`\x1b\]8;;([^\x1b\x07]+)(?:\x1b\\|\x07)`)
+
 // DetailPane displays formatted text (JSON inspect, YAML, describe output).
 type DetailPane struct {
 	content  string
@@ -130,8 +139,18 @@ func (d *DetailPane) Update(msg tea.Msg) tea.Cmd {
 		}
 		lineIdx := d.offset + y
 		if lineIdx >= 0 && lineIdx < len(d.lines) {
-			plain := ansiPattern.ReplaceAllString(d.lines[lineIdx], "")
-			if url := urlPattern.FindString(plain); url != "" {
+			raw := d.lines[lineIdx]
+			// Prefer OSC 8 since formatter wraps every reference
+			// (#NNN / !NNN) in one; fall back to a plain http(s) URL
+			// in the visible text for body / URL row.
+			url := ""
+			if m := osc8Pattern.FindStringSubmatch(raw); len(m) > 1 {
+				url = m[1]
+			} else {
+				plain := ansiPattern.ReplaceAllString(raw, "")
+				url = urlPattern.FindString(plain)
+			}
+			if url != "" {
 				_ = exec.Command("xdg-open", url).Start() //nolint:gosec,noctx // intentional browser open
 			}
 		}
