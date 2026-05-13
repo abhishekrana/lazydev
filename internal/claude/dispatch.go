@@ -138,16 +138,24 @@ func DispatchInteractive(req DispatchRequest) (Result, error) {
 	if base == "" {
 		base = "lazydev-claude"
 	}
-	// Build the command Claude Code will run inside the tmux pane. We
-	// `cat` the prompt then exec claude — this gives the user a visible
-	// view of the task and starts an interactive session in the repo.
-	cdQuoted := shellQuote(req.Env.RepoRoot)
-	promptQuoted := shellQuote(promptPath)
-	claudeQuoted := shellQuote(req.Env.ClaudeBin)
-	inner := fmt.Sprintf(
-		"cd %s && cat %s && echo && echo '--- starting claude ---' && exec %s %s",
-		cdQuoted, promptQuoted, claudeQuoted, promptQuoted,
+	// Write the dispatch body to a /bin/sh script and have tmux run it
+	// via `sh <path>`. Tmux's shell-command is passed to the user's
+	// $SHELL with `-c`, so the user's shell only has to parse a simple
+	// `sh <path>` invocation — not the POSIX-quoted body. This keeps
+	// dispatch working under non-POSIX shells (fish, nushell), since the
+	// `'\''` escaping in shellQuote is interpreted by /bin/sh, not $SHELL.
+	scriptPath := filepath.Join(promptDir, id+".sh")
+	script := fmt.Sprintf(
+		"#!/bin/sh\nset -e\ncd %s\ncat %s\necho\necho '--- starting claude ---'\nexec %s %s\n",
+		shellQuote(req.Env.RepoRoot),
+		shellQuote(promptPath),
+		shellQuote(req.Env.ClaudeBin),
+		shellQuote(promptPath),
 	)
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil { //nolint:gosec // repo-owned
+		return Result{}, err
+	}
+	inner := fmt.Sprintf("sh %s", shellQuote(scriptPath))
 
 	var target string
 	if req.Env.InsideTmux {
