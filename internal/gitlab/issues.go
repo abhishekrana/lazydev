@@ -250,6 +250,7 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 		iter += "  (" + issue.IterationDates + ")"
 	}
 	rows := []labeled{
+		{"State", FormatState(issue.State)},
 		{"Assignees", issue.Assignee},
 		{"Labels", strings.Join(issue.Labels, ", ")},
 		{"Milestone", issue.Milestone},

@@ -8,16 +8,22 @@ import (
 )
 
 // FormatIssueTitle is the single-line title rendered in the detail
-// pane's header row above the metadata strip.
+// pane's header row above the metadata strip. State lives in the
+// header strip below, not here — keeps the title focused on what the
+// item is.
 func FormatIssueTitle(issue messages.GitLabIssue) string {
-	return fmt.Sprintf("#%d  %s %s  ·  %s",
-		issue.IID, stateGlyph(issue.State), issue.State, issue.Title)
+	return fmt.Sprintf("#%d  %s", issue.IID, issue.Title)
 }
 
 // FormatMRTitle is the MR equivalent of FormatIssueTitle.
 func FormatMRTitle(mr messages.GitLabMR) string {
-	return fmt.Sprintf("!%d  %s %s  ·  %s",
-		mr.IID, stateGlyph(mr.State), mr.State, mr.Title)
+	return fmt.Sprintf("!%d  %s", mr.IID, mr.Title)
+}
+
+// FormatState is the "<glyph> <state>" string used as the value of
+// the State row in the header strip.
+func FormatState(state string) string {
+	return stateGlyph(state) + " " + state
 }
 
 const (

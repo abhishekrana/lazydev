@@ -226,6 +226,7 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 		changes = mr.ChangesCount + " files"
 	}
 	rows := []labeled{
+		{"State", FormatState(mr.State)},
 		{"Assignee", mr.Assignee},
 		{"Reviewers", strings.Join(mr.Reviewers, ", ")},
 		{"Labels", strings.Join(mr.Labels, ", ")},
