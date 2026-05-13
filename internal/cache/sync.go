@@ -62,8 +62,6 @@ type Syncer struct {
 	stopped        atomic.Bool
 }
 
-const metaLastFullSync = "last_full_sync"
-
 // NewSyncer constructs a Syncer. Call Start() to launch its goroutine
 // and Events() to consume status events. The channel has a small
 // buffer so a slow reader can't stall the sync loop.
@@ -106,19 +104,13 @@ func (s *Syncer) Start(ctx context.Context) {
 func (s *Syncer) run(ctx context.Context) {
 	defer close(s.events)
 
-	// Decide whether to prefetch or do an incremental sync on first
-	// pass. Empty cache or stale last_full_sync → prefetch.
-	last, _ := s.store.GetMeta(ctx, metaLastFullSync)
-	needsPrefetch := last == ""
-	if !needsPrefetch {
-		if ts, err := time.Parse(time.RFC3339, last); err == nil {
-			needsPrefetch = time.Since(ts) > s.prefetchWindow
-		} else {
-			needsPrefetch = true
-		}
-	}
-
-	if needsPrefetch {
+	// Empty cache → prefetch; otherwise the incremental loop catches up
+	// from MaxIssueUpdatedAt / MaxMRUpdatedAt. `rm cache.db` is the
+	// supported way to force a fresh prefetch (or wait for a schema
+	// bump in migrate()).
+	maxIss, _ := s.store.MaxIssueUpdatedAt(ctx)
+	maxMR, _ := s.store.MaxMRUpdatedAt(ctx)
+	if maxIss.IsZero() && maxMR.IsZero() {
 		if err := s.prefetch(ctx); err != nil {
 			s.emit(SyncEvent{State: "offline", Err: err, LastSyncAt: time.Now()})
 		}
@@ -192,10 +184,6 @@ func (s *Syncer) prefetch(ctx context.Context) error {
 	s.emit(SyncEvent{State: "prefetching", Kind: "mrs",
 		Progress:   formatProgress(len(mrs), len(mrs)),
 		LastSyncAt: time.Now()})
-
-	if err := s.store.SetMeta(ctx, metaLastFullSync, time.Now().UTC().Format(time.RFC3339)); err != nil {
-		return err
-	}
 	return nil
 }
 

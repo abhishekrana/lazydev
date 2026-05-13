@@ -34,6 +34,14 @@ tasks:
     cmds:
       - rm -f {{.BINARY}}
 
+  wipe-cache:
+    desc: Delete the local SQLite cache so the next run prefetches from scratch
+    vars:
+      CACHE_DIR: '{{.XDG_STATE_HOME | default (printf "%s/.local/state" .HOME)}}/lazydev'
+    cmds:
+      - rm -f {{.CACHE_DIR}}/cache.db {{.CACHE_DIR}}/cache.db-wal {{.CACHE_DIR}}/cache.db-shm
+      - echo "Wiped {{.CACHE_DIR}}/cache.db*"
+
   tidy:
     desc: Run go mod tidy
     cmds:
