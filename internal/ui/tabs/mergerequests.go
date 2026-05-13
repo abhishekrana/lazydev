@@ -550,7 +550,7 @@ func (t *MRsTab) toggleAIAssignee(mr *messages.GitLabMR) tea.Cmd {
 	iid := mr.IID
 	targetID := aiID
 	target := t.opts.AIUser
-	if mr.Assignee == t.opts.AIUser {
+	if containsString(mr.Assignees, t.opts.AIUser) {
 		targetID = t.client.UserID
 		target = t.client.Username
 	}

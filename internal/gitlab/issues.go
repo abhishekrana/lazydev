@@ -196,9 +196,11 @@ func convertIssues(raw []*gitlab.Issue) []messages.GitLabIssue {
 }
 
 func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
-	var assignee string
-	if len(issue.Assignees) > 0 {
-		assignee = issue.Assignees[0].Username
+	assignees := make([]string, 0, len(issue.Assignees))
+	for _, a := range issue.Assignees {
+		if a != nil {
+			assignees = append(assignees, a.Username)
+		}
 	}
 	labels := make([]string, 0, len(issue.Labels))
 	for _, l := range issue.Labels {
@@ -232,7 +234,7 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 		Iteration:      iteration,
 		IterationDates: iterationDates,
 		Author:         issue.Author.Username,
-		Assignee:       assignee,
+		Assignees:      assignees,
 		WebURL:         issue.WebURL,
 		CreatedAt:      safeTime(issue.CreatedAt),
 		UpdatedAt:      safeTime(issue.UpdatedAt),
@@ -258,7 +260,7 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 	rows := []labeled{
 		{"State", FormatState(issue.State)},
 		{"Status", ""},
-		{"Assignees", issue.Assignee},
+		{"Assignees", strings.Join(issue.Assignees, ", ")},
 		{"Labels", strings.Join(issue.Labels, ", ")},
 		{"Parent", ""},
 		{"Weight", ""},

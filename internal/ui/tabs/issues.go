@@ -491,7 +491,14 @@ func (t *IssuesTab) fetchIssues() tea.Cmd {
 		var assigned, created []messages.GitLabIssue
 		seen := make(map[int64]bool)
 		for _, iss := range all {
-			if trackedNames[iss.Assignee] {
+			tracked := false
+			for _, name := range iss.Assignees {
+				if trackedNames[name] {
+					tracked = true
+					break
+				}
+			}
+			if tracked {
 				assigned = append(assigned, iss)
 				seen[iss.IID] = true
 			}
@@ -579,7 +586,7 @@ func (t *IssuesTab) toggleAIAssignee(issue *messages.GitLabIssue) tea.Cmd {
 	iid := issue.IID
 	targetID := aiID
 	target := t.opts.AIUser
-	if issue.Assignee == t.opts.AIUser {
+	if containsString(issue.Assignees, t.opts.AIUser) {
 		targetID = t.client.UserID
 		target = t.client.Username
 	}
@@ -637,7 +644,7 @@ func (t *IssuesTab) quickCreateForAI() tea.Cmd {
 		}
 		// Optimistic cache upsert so the new issue shows up in the
 		// AI-queue view immediately.
-		newIssue.Assignee = t.opts.AIUser
+		newIssue.Assignees = []string{t.opts.AIUser}
 		ctx := context.Background()
 		_ = t.store.UpsertIssues(ctx, []messages.GitLabIssue{*newIssue})
 		return messages.IssueActionMsg{

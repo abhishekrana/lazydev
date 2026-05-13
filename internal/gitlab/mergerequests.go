@@ -186,9 +186,11 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 	} else if mr.Pipeline != nil {
 		pipelineStatus = mr.Pipeline.Status
 	}
-	var assignee string
-	if mr.Assignee != nil {
-		assignee = mr.Assignee.Username
+	assignees := make([]string, 0, len(mr.Assignees))
+	for _, a := range mr.Assignees {
+		if a != nil {
+			assignees = append(assignees, a.Username)
+		}
 	}
 	return messages.GitLabMR{
 		ID:             mr.ID,
@@ -200,7 +202,7 @@ func convertFullMR(mr *gitlab.MergeRequest) messages.GitLabMR {
 		SourceBranch:   mr.SourceBranch,
 		TargetBranch:   mr.TargetBranch,
 		Author:         mr.Author.Username,
-		Assignee:       assignee,
+		Assignees:      assignees,
 		Reviewers:      reviewers,
 		Labels:         labels,
 		PipelineStatus: pipelineStatus,
@@ -227,7 +229,7 @@ func FormatMRDetail(mr messages.GitLabMR, notes []messages.GitLabNote, width int
 	}
 	rows := []labeled{
 		{"State", FormatState(mr.State)},
-		{"Assignee", mr.Assignee},
+		{"Assignees", strings.Join(mr.Assignees, ", ")},
 		{"Reviewers", strings.Join(mr.Reviewers, ", ")},
 		{"Labels", strings.Join(mr.Labels, ", ")},
 		{"Source", mr.SourceBranch},

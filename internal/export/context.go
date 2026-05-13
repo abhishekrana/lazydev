@@ -71,8 +71,8 @@ func writeIssueXML(b *strings.Builder, it ExportItem) {
 		return
 	}
 	iss := it.Issue
-	fmt.Fprintf(b, `  <issue id="#%d" url=%q state=%q assignee=%q author=%q updated=%q`,
-		iss.IID, iss.WebURL, iss.State, iss.Assignee, iss.Author, iss.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintf(b, `  <issue id="#%d" url=%q state=%q assignees=%q author=%q updated=%q`,
+		iss.IID, iss.WebURL, iss.State, strings.Join(iss.Assignees, ","), iss.Author, iss.UpdatedAt.Format(time.RFC3339))
 	if len(iss.Labels) > 0 {
 		fmt.Fprintf(b, ` labels=%q`, strings.Join(iss.Labels, ","))
 	}
@@ -98,8 +98,8 @@ func writeMRXML(b *strings.Builder, it ExportItem) {
 		return
 	}
 	mr := it.MR
-	fmt.Fprintf(b, `  <mr id="!%d" url=%q state=%q assignee=%q author=%q source=%q target=%q updated=%q`,
-		mr.IID, mr.WebURL, mr.State, mr.Assignee, mr.Author, mr.SourceBranch, mr.TargetBranch,
+	fmt.Fprintf(b, `  <mr id="!%d" url=%q state=%q assignees=%q author=%q source=%q target=%q updated=%q`,
+		mr.IID, mr.WebURL, mr.State, strings.Join(mr.Assignees, ","), mr.Author, mr.SourceBranch, mr.TargetBranch,
 		mr.UpdatedAt.Format(time.RFC3339))
 	if mr.PipelineStatus != "" {
 		fmt.Fprintf(b, ` pipeline=%q`, mr.PipelineStatus)
@@ -153,8 +153,8 @@ func writeIssueMD(b *strings.Builder, it ExportItem) {
 	}
 	fmt.Fprintf(b, "## ISSUE-%d: %s\n\n", iss.IID, iss.Title)
 	fmt.Fprintf(b, "- State: %s\n- Author: %s\n", iss.State, iss.Author)
-	if iss.Assignee != "" {
-		fmt.Fprintf(b, "- Assignee: %s\n", iss.Assignee)
+	if len(iss.Assignees) > 0 {
+		fmt.Fprintf(b, "- Assignees: %s\n", strings.Join(iss.Assignees, ", "))
 	}
 	if len(iss.Labels) > 0 {
 		fmt.Fprintf(b, "- Labels: %s\n", strings.Join(iss.Labels, ", "))

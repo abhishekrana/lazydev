@@ -39,7 +39,7 @@ type GitLabIssue struct {
 	Iteration          string // iteration title (e.g. "Sprint 5")
 	IterationDates     string // e.g. "Mar 22 – Apr 4, 2026"
 	Author             string
-	Assignee           string
+	Assignees          []string
 	WebURL             string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -54,7 +54,7 @@ type GitLabMR struct {
 	SourceBranch       string
 	TargetBranch       string
 	Author             string
-	Assignee           string
+	Assignees          []string
 	Reviewers          []string
 	Labels             []string
 	PipelineStatus     string

@@ -77,10 +77,15 @@ func buildItemQuery(table, cols string, f Filter) (string, []any) {
 
 	if f.Assignee != "" {
 		if f.Assignee == "@none" {
-			sb.WriteString(" AND assignee = ''")
+			// '[]' is the serialized empty-set sentinel produced by
+			// json.Marshal of a nil/empty []string.
+			sb.WriteString(" AND (assignees = '[]' OR assignees = '')")
 		} else {
-			sb.WriteString(" AND assignee = ?")
-			args = append(args, f.Assignee)
+			// Assignees are stored as a JSON array (e.g. ["alice","bob"]).
+			// LIKE on the quoted username is good enough for usernames
+			// that don't contain a literal '"' character.
+			sb.WriteString(` AND assignees LIKE ?`)
+			args = append(args, `%"`+f.Assignee+`"%`)
 		}
 	}
 	if f.Author != "" {

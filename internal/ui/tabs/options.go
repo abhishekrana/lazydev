@@ -35,3 +35,13 @@ type Options struct {
 	// lazydev is running outside tmux.
 	TmuxSession string
 }
+
+// containsString returns true when needle appears in haystack.
+func containsString(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}

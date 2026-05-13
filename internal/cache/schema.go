@@ -17,13 +17,12 @@ CREATE TABLE IF NOT EXISTS issues (
     iteration       TEXT    NOT NULL DEFAULT '',
     iteration_dates TEXT    NOT NULL DEFAULT '',
     author          TEXT    NOT NULL DEFAULT '',
-    assignee        TEXT    NOT NULL DEFAULT '',
+    assignees       TEXT    NOT NULL DEFAULT '[]',
     web_url         TEXT    NOT NULL DEFAULT '',
     created_at      INTEGER NOT NULL DEFAULT 0,
     updated_at      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_issues_state    ON issues(state);
-CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee);
 CREATE INDEX IF NOT EXISTS idx_issues_updated  ON issues(updated_at);
 
 CREATE TABLE IF NOT EXISTS mrs (
@@ -36,7 +35,7 @@ CREATE TABLE IF NOT EXISTS mrs (
     source_branch   TEXT    NOT NULL DEFAULT '',
     target_branch   TEXT    NOT NULL DEFAULT '',
     author          TEXT    NOT NULL DEFAULT '',
-    assignee        TEXT    NOT NULL DEFAULT '',
+    assignees       TEXT    NOT NULL DEFAULT '[]',
     reviewers       TEXT    NOT NULL DEFAULT '[]',
     labels          TEXT    NOT NULL DEFAULT '[]',
     pipeline_status TEXT    NOT NULL DEFAULT '',
@@ -46,7 +45,6 @@ CREATE TABLE IF NOT EXISTS mrs (
     updated_at      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_mrs_state    ON mrs(state);
-CREATE INDEX IF NOT EXISTS idx_mrs_assignee ON mrs(assignee);
 CREATE INDEX IF NOT EXISTS idx_mrs_updated  ON mrs(updated_at);
 
 CREATE TABLE IF NOT EXISTS notes (

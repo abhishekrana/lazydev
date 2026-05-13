@@ -38,11 +38,62 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
+	if err := migrate(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return &Store{db: db}, nil
+}
+
+// currentSchemaVersion bumps whenever the on-disk shape changes in a
+// way that pre-existing rows can't be read. The Syncer repopulates the
+// cache from GitLab on next start, so dropping is acceptable.
+const currentSchemaVersion = "2"
+
+// migrate ensures the DB matches currentSchemaVersion. If the meta
+// row is missing or stale, it drops the data tables (issues, mrs,
+// notes, related_mrs, search_fts) and re-creates them via schemaSQL.
+// The meta table itself is preserved so the version row can be
+// rewritten.
+func migrate(ctx context.Context, db *sql.DB) error {
+	// Create the meta table first — schemaSQL also creates it, but we
+	// need it before we can read the version.
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS meta (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		return err
+	}
+
+	var version string
+	_ = db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'schema_version'`).Scan(&version)
+
+	if version != currentSchemaVersion {
+		drops := []string{
+			`DROP TABLE IF EXISTS search_fts`,
+			`DROP TABLE IF EXISTS related_mrs`,
+			`DROP TABLE IF EXISTS notes`,
+			`DROP TABLE IF EXISTS mrs`,
+			`DROP TABLE IF EXISTS issues`,
+		}
+		for _, q := range drops {
+			if _, err := db.ExecContext(ctx, q); err != nil {
+				return fmt.Errorf("dropping stale tables: %w", err)
+			}
+		}
+	}
+
+	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
+		return err
+	}
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO meta(key, value) VALUES('schema_version', ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		currentSchemaVersion); err != nil {
+		return fmt.Errorf("recording schema version: %w", err)
+	}
+	return nil
 }
 
 // Close releases the underlying database handle.
@@ -69,7 +120,7 @@ func (s *Store) UpsertIssues(ctx context.Context, items []messages.GitLabIssue) 
 
 	const upsert = `INSERT INTO issues (
 		iid, id, project_id, title, description, state, labels, milestone,
-		iteration_id, iteration, iteration_dates, author, assignee, web_url,
+		iteration_id, iteration, iteration_dates, author, assignees, web_url,
 		created_at, updated_at
 	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(iid) DO UPDATE SET
@@ -84,17 +135,18 @@ func (s *Store) UpsertIssues(ctx context.Context, items []messages.GitLabIssue) 
 		iteration       = excluded.iteration,
 		iteration_dates = excluded.iteration_dates,
 		author          = excluded.author,
-		assignee        = excluded.assignee,
+		assignees       = excluded.assignees,
 		web_url         = excluded.web_url,
 		created_at      = excluded.created_at,
 		updated_at      = excluded.updated_at`
 
 	for _, it := range items {
 		labels, _ := json.Marshal(it.Labels)
+		assignees, _ := json.Marshal(it.Assignees)
 		if _, err := tx.ExecContext(ctx, upsert,
 			it.IID, it.ID, it.ProjectID, it.Title, it.Description, it.State,
 			string(labels), it.Milestone, it.IterationID, it.Iteration, it.IterationDates,
-			it.Author, it.Assignee, it.WebURL,
+			it.Author, string(assignees), it.WebURL,
 			it.CreatedAt.Unix(), it.UpdatedAt.Unix(),
 		); err != nil {
 			return fmt.Errorf("upsert issue %d: %w", it.IID, err)
@@ -192,7 +244,7 @@ func (s *Store) UpsertMRs(ctx context.Context, items []messages.GitLabMR) error 
 
 	const upsert = `INSERT INTO mrs (
 		iid, id, project_id, title, description, state,
-		source_branch, target_branch, author, assignee, reviewers, labels,
+		source_branch, target_branch, author, assignees, reviewers, labels,
 		pipeline_status, changes_count, web_url,
 		created_at, updated_at
 	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -205,7 +257,7 @@ func (s *Store) UpsertMRs(ctx context.Context, items []messages.GitLabMR) error 
 		source_branch   = excluded.source_branch,
 		target_branch   = excluded.target_branch,
 		author          = excluded.author,
-		assignee        = excluded.assignee,
+		assignees       = excluded.assignees,
 		reviewers       = excluded.reviewers,
 		labels          = excluded.labels,
 		pipeline_status = excluded.pipeline_status,
@@ -215,11 +267,12 @@ func (s *Store) UpsertMRs(ctx context.Context, items []messages.GitLabMR) error 
 		updated_at      = excluded.updated_at`
 
 	for _, m := range items {
+		assignees, _ := json.Marshal(m.Assignees)
 		reviewers, _ := json.Marshal(m.Reviewers)
 		labels, _ := json.Marshal(m.Labels)
 		if _, err := tx.ExecContext(ctx, upsert,
 			m.IID, m.ID, m.ProjectID, m.Title, m.Description, m.State,
-			m.SourceBranch, m.TargetBranch, m.Author, m.Assignee,
+			m.SourceBranch, m.TargetBranch, m.Author, string(assignees),
 			string(reviewers), string(labels),
 			m.PipelineStatus, m.ChangesCount, m.WebURL,
 			m.CreatedAt.Unix(), m.UpdatedAt.Unix(),
@@ -439,11 +492,11 @@ func (s *Store) PruneOlderThan(ctx context.Context, cutoff time.Time) (int64, er
 // --- Scanning helpers ---
 
 const issueCols = `iid, id, project_id, title, description, state, labels, milestone,
-	iteration_id, iteration, iteration_dates, author, assignee, web_url,
+	iteration_id, iteration, iteration_dates, author, assignees, web_url,
 	created_at, updated_at`
 
 const mrCols = `iid, id, project_id, title, description, state,
-	source_branch, target_branch, author, assignee, reviewers, labels,
+	source_branch, target_branch, author, assignees, reviewers, labels,
 	pipeline_status, changes_count, web_url, created_at, updated_at`
 
 type rowScanner interface {
@@ -452,16 +505,17 @@ type rowScanner interface {
 
 func scanIssue(r rowScanner) (messages.GitLabIssue, error) {
 	var it messages.GitLabIssue
-	var labels string
+	var labels, assignees string
 	var created, updated int64
 	if err := r.Scan(
 		&it.IID, &it.ID, &it.ProjectID, &it.Title, &it.Description, &it.State,
 		&labels, &it.Milestone, &it.IterationID, &it.Iteration, &it.IterationDates,
-		&it.Author, &it.Assignee, &it.WebURL, &created, &updated,
+		&it.Author, &assignees, &it.WebURL, &created, &updated,
 	); err != nil {
 		return it, err
 	}
 	_ = json.Unmarshal([]byte(labels), &it.Labels)
+	_ = json.Unmarshal([]byte(assignees), &it.Assignees)
 	it.CreatedAt = time.Unix(created, 0)
 	it.UpdatedAt = time.Unix(updated, 0)
 	return it, nil
@@ -469,16 +523,17 @@ func scanIssue(r rowScanner) (messages.GitLabIssue, error) {
 
 func scanMR(r rowScanner) (messages.GitLabMR, error) {
 	var m messages.GitLabMR
-	var reviewers, labels string
+	var assignees, reviewers, labels string
 	var created, updated int64
 	if err := r.Scan(
 		&m.IID, &m.ID, &m.ProjectID, &m.Title, &m.Description, &m.State,
-		&m.SourceBranch, &m.TargetBranch, &m.Author, &m.Assignee,
+		&m.SourceBranch, &m.TargetBranch, &m.Author, &assignees,
 		&reviewers, &labels, &m.PipelineStatus, &m.ChangesCount, &m.WebURL,
 		&created, &updated,
 	); err != nil {
 		return m, err
 	}
+	_ = json.Unmarshal([]byte(assignees), &m.Assignees)
 	_ = json.Unmarshal([]byte(reviewers), &m.Reviewers)
 	_ = json.Unmarshal([]byte(labels), &m.Labels)
 	m.CreatedAt = time.Unix(created, 0)

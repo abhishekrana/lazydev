@@ -29,7 +29,7 @@ func TestStoreRoundtrip(t *testing.T) {
 			Description: "Auth token isn't being refreshed when the session expires.",
 			State:       "opened",
 			Labels:      []string{"bug", "auth"},
-			Assignee:    "alice",
+			Assignees:   []string{"alice"},
 			Author:      "bob",
 			WebURL:      "https://example.com/issues/1",
 			CreatedAt:   now.Add(-2 * time.Hour),
@@ -39,7 +39,7 @@ func TestStoreRoundtrip(t *testing.T) {
 			IID:       2,
 			Title:     "Add export to CSV",
 			State:     "closed",
-			Assignee:  "claude-bot",
+			Assignees: []string{"claude-bot", "alice"},
 			UpdatedAt: now,
 		},
 	}

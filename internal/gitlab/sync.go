@@ -87,12 +87,15 @@ func (c *Client) ListMRsUpdatedAfter(t time.Time, state string) ([]messages.GitL
 // BasicMergeRequest. PipelineStatus and ChangesCount remain empty —
 // callers wanting those fields must GetMR by IID.
 func basicMRToFull(mr *gitlab.BasicMergeRequest) messages.GitLabMR {
-	var author, assignee string
+	var author string
 	if mr.Author != nil {
 		author = mr.Author.Username
 	}
-	if mr.Assignee != nil {
-		assignee = mr.Assignee.Username
+	assignees := make([]string, 0, len(mr.Assignees))
+	for _, a := range mr.Assignees {
+		if a != nil {
+			assignees = append(assignees, a.Username)
+		}
 	}
 	reviewers := make([]string, 0, len(mr.Reviewers))
 	for _, r := range mr.Reviewers {
@@ -114,7 +117,7 @@ func basicMRToFull(mr *gitlab.BasicMergeRequest) messages.GitLabMR {
 		SourceBranch: mr.SourceBranch,
 		TargetBranch: mr.TargetBranch,
 		Author:       author,
-		Assignee:     assignee,
+		Assignees:    assignees,
 		Reviewers:    reviewers,
 		Labels:       labels,
 		WebURL:       mr.WebURL,
