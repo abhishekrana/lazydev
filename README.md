@@ -12,7 +12,7 @@ Built with Go and Bubble Tea v2. Solarized Light by default.
 - **Rich detail pane** — `gh issue view`-style header strip (State, Status, Assignees, Labels, Parent, Milestone, Iteration, Author, Created, Updated, URL) + glamour-rendered body + footer sections for Related MRs, Child items, and Linked items (grouped `Blocked by` / `Blocks` / `Relates to`). Every `#NNN` / `!NNN` reference and URL is an OSC 8 hyperlink — `Ctrl+click` opens it in the browser.
 - **Query DSL on `/`** — `assignee:@me`, `assignee:@ai`, `label:bug`, `state:open`, `kind:mr`, `updated:>7d`, plus bare fuzzy terms over title/body/notes (FTS5). Tokens are AND'd; quoted strings preserved. `Enter` commits the filter without dropping it.
 - **Multi-select** — `Space` to mark, `v` for visual range, `Esc` to clear. All export and Claude dispatch keys act on the marked set (or the cursor item if nothing is marked).
-- **Claude Code handoff** — `C` opens an interactive Claude session in a tmux window (or new tmux session if outside tmux); `P` runs `claude -p` one-shot and tees output to `.lazydev/claude-runs/<id>.log`. Both compose a structured prompt from the marked items.
+- **Claude Code handoff** — `C` opens an interactive Claude session in a tmux window (or new tmux session if outside tmux); `P` spawns `claude -p` in the background and tees output to `.lazydev/claude-runs/<id>.log`. Both return immediately, persist a session record, and compose a structured prompt from the marked items. Interactive dispatch goes through a `/bin/sh` launcher script so non-POSIX shells (fish, nushell) work as the user's `$SHELL`.
 - **Sessions tab** — Claude tab lists dispatched sessions from `.lazydev/sessions.json`; `Enter` re-attaches, `o` opens the originating issue/MR, `L` opens the run log, `d` drops the record.
 - **AI handoff helpers** — `T` toggles assignee between self and the configured `ai_user`; `N` quick-creates an issue from a `$EDITOR` template assigned to `ai_user`.
 - **Multi-assignee aware** — items with multiple assignees are tracked correctly across the sidebar grouping, AI-toggle, and export bundles.
@@ -51,6 +51,28 @@ cd ~/my-gitlab-project && lazydev
 GitLab auth is auto-detected in this order: `gitlab.token` in config, `GITLAB_TOKEN` env, `~/.config/glab-cli/config.yml`. Lazydev refuses to start if GitLab is not configured.
 
 Claude Code integration activates automatically when the `claude` binary is on `PATH`. `tmux` is required for the interactive (`C`) dispatch path; the one-shot path (`P`) works without it.
+
+## Workflow
+
+lazydev is the **triage + handoff** surface; Claude Code is the **execution** surface. The intended loop:
+
+1. **Triage** in the Issues / MRs tab. Sidebar paints instantly from cache; syncer refreshes in the background.
+2. **Narrow** with `/` (query DSL): `assignee:@me` for your work, `assignee:@ai` for what's queued for Claude, `label:bug state:open updated:>3d` for recent bugs, etc.
+3. **Pick** the item under the cursor — or `Space` to mark multiple and bundle them into one prompt.
+4. **Dispatch**:
+   - `C` — interactive Claude in a tmux split. Pair with it.
+   - `P` — one-shot Claude that runs in the background; output streams to `.lazydev/claude-runs/<id>.log`.
+5. **Track** in the **Claude tab**: every dispatched session is listed with its ref (`#421`, `!1024`), mode, and status. `Enter` re-attaches an interactive session; `L` opens the run log of a one-shot.
+
+### The AI-queue convention
+
+Set `gitlab.ai_user` to a bot account (e.g. `claude-bot`) and lazydev gives you bidirectional handoff with that user:
+
+- `T` toggles an item's assignee between you and `ai_user` — push work to Claude, or take it back.
+- `N` quick-creates an issue from a `$EDITOR` template auto-assigned to `ai_user`.
+- `@ai` in the query DSL resolves to that username — `/assignee:@ai state:open` is Claude's open queue.
+
+GitLab becomes the queue manager, the bot account is the queue holder, lazydev gives you one-key triage between you and Claude. No new infrastructure required.
 
 ## Keybindings
 

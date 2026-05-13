@@ -37,7 +37,7 @@ go build ./...    # compile-check all packages
   - `workitems_graphql.go` — bulk + single-item GraphQL via `c.Raw.GraphQL.Do`. `StreamWorkItemsUpdatedAfter(t, onPage)` paginates `namespace.workItems` 50 at a time with every widget (`Description`, `Assignees`, `Labels`, `Milestone`, `Iteration`, `Status`, `Hierarchy`, `LinkedItems`) and yields a `messages.WorkItemPage` per page. `GetWorkItemBundle(iid)` is the per-detail variant.
   - `sync.go` — `ListMRsUpdatedAfter` (REST). Issue sync is GraphQL now.
   - `format.go` — `linkify` (OSC 8 + SGR underline + SolBlue), `formatChildItems`, `formatLinkedItems`, `formatParent` (derives parent URL via IID substitution), `formatDateWithAge`, header-strip helpers.
-- `internal/claude/` — Claude Code integration. `discovery.go` resolves `claude`/`tmux` binaries and the repo root; `prompt.go` composes the structured prompt from `ExportItem`s; `dispatch.go` runs one-shot (`claude -p`, output to `.lazydev/claude-runs/<id>.log`) or interactive (tmux new-window/new-session); `session.go` persists dispatched sessions to `.lazydev/sessions.json`.
+- `internal/claude/` — Claude Code integration. `discovery.go` resolves `claude`/`tmux` binaries and the repo root; `prompt.go` composes the structured prompt from `ExportItem`s; `dispatch.go` runs one-shot (`claude -p`, spawned in the background, output to `.lazydev/claude-runs/<id>.log` mode `0600`; a goroutine waits on exit and flips the session record) or interactive (writes a `/bin/sh` launcher script then asks tmux to `new-window`/`new-session sh <path>` — keeps dispatch working under fish/nushell); `session.go` persists dispatched sessions to `.lazydev/sessions.json`. `finishSession` helper unifies the done/failed status update on both Start-failed and Wait-completed paths.
 - `internal/query/parser.go` — DSL parser. `assignee:@me label:bug state:open kind:mr updated:>7d` plus bare fuzzy terms. `@me` → authenticated user, `@ai` → `cfg.GitLab.AIUser`, `@none` → unassigned sentinel, `@any` → no filter. Tokens are AND'd; quoted strings preserved by `tokenize`.
 - `internal/export/` — `context.go` builds Claude-XML or markdown bundles from `ExportItem`s; `export.go` writes `/tmp/lazydev-*` files and emits OSC52 clipboard escapes; `tty.go` / `tty_windows.go` handle writing OSC52 to the controlling terminal.
 - `internal/config/` — YAML config + defaults. XDG-compliant paths: config at `~/.config/lazydev/config.yaml`, cache at `~/.local/state/lazydev/cache.db`. Default `cache.sync_interval_s = 60`.
@@ -65,7 +65,7 @@ go build ./...    # compile-check all packages
 - **TabModel interface** (`internal/ui/root.go`): `Init()`, `Update() (TabModel, tea.Cmd)`, `View() string`, `Title()`, `SetSize()`. Optional `Notifier` interface lets tabs surface status-bar messages.
 - **GitLab auth discovery**: config → `GITLAB_TOKEN` env → `~/.config/glab-cli/config.yml` (handles `!!null` YAML tag). Project auto-detected from `git remote get-url origin`. `Client.ProjectNumericID` resolved at init via `Projects.GetProject` for /uploads/ rewrites. App refuses to start if no GitLab client is built.
 - **Multi-user tracking**: queries fan out across `cfg.GitLab.AdditionalUsers` plus the authenticated user; sidebar grouping uses the union to decide "Assigned to me/bot" vs "Other".
-- **Claude dispatch (`C` / `P`)**: shared `dispatchClaude` in `tabs/claude_dispatch.go` builds a structured prompt via `claude.Compose`, then calls `claude.DispatchInteractive` (tmux new-window inside tmux, new-session outside) or `claude.DispatchOneShot` (`claude -p`, output to `.lazydev/claude-runs/<id>.log`). Both persist a `Session` record to `.lazydev/sessions.json` (`claude.Store`). The `ClaudeTab` lists those records and re-attaches via `tmux attach`.
+- **Claude dispatch (`C` / `P`)**: shared `dispatchClaude` in `tabs/claude_dispatch.go` builds a structured prompt via `claude.Compose`, then calls `claude.DispatchInteractive` or `claude.DispatchOneShot`. Both return immediately and persist a `Session` record (status `running`) to `.lazydev/sessions.json` (`claude.Store`). `DispatchInteractive` writes a `/bin/sh` launcher script to `.lazydev/claude-prompts/<id>.sh` and asks tmux to run `sh <path>` via `new-window` (inside tmux) or `new-session` (outside) — going through `/bin/sh` rather than the user's `$SHELL` keeps POSIX `'\''` quoting working under fish/nushell. `DispatchOneShot` spawns `claude -p` in the background; a goroutine waits on exit and calls `finishSession` to flip status to `done`/`failed`. The `ClaudeTab` lists those records and re-attaches via `tmux attach`.
 - **Query DSL → cache**: the queryline emits an `Expression`; `Filter` goes straight to `cache.ListIssues`/`ListMRs`; `UpdatedAfter`/`UpdatedBefore` from `updated:` tokens narrow the result set; `Kind` ("issue" / "mr") short-circuits the wrong tab to an empty list so a single expression can target either tab. Unknown keys fall through as fuzzy text rather than errors. Enter on the queryline hides the line but keeps `queryExpr` applied; Esc clears.
 - **Two-key sequences**: `gg` (top) uses `pendingG`; `Ctrl+W w` (pane toggle) uses `pendingCtrlW`. Both reset on any unrelated keypress.
 
@@ -90,23 +90,25 @@ go build ./...    # compile-check all packages
 - **Plans before implementation**: write the plan to `docs/` on the feature branch and commit before starting work (see auto-memory `Plan docs workflow`).
 - Keybindings accept both vim (`hjkl`) and arrow keys via `key.NewBinding` with multiple keys.
 - Sidebar width is 25 % of terminal width (minimum 30 cols).
-- Config path: `~/.config/lazydev/config.yaml`. Cache: `~/.local/state/lazydev/cache.db`. Claude dispatch artifacts: `.lazydev/sessions.json`, `.lazydev/claude-runs/`, `.lazydev/claude-prompts/` (repo-relative).
+- Config path: `~/.config/lazydev/config.yaml`. Cache: `~/.local/state/lazydev/cache.db`. Claude dispatch artifacts (repo-relative): `.lazydev/sessions.json` (ledger), `.lazydev/claude-runs/<id>.log` (one-shot output, mode `0600`), `.lazydev/claude-prompts/<id>.md` (composed prompt) and `<id>.sh` (launcher script).
 - Markdown in detail panes is rendered via glamour with `WithWordWrap(paneWidth)`.
 - Relative GitLab URLs are resolved to absolute; `/uploads/` paths use `/-/project/{id}/uploads/` format.
 - Export bundles default to `claude-xml` (Anthropic's recommended multi-document framing); switch to `markdown` via `export.format` when piping to non-Claude tools.
 
 ## Current Status
 
-Issues/MRs focus + SQLite cache + Claude Code handoff is the v2 product. Recent additions:
+Issues/MRs focus + SQLite cache + Claude Code handoff is the v2 product. Recent changes (newest first):
 
+- **Cut saved views** (`be28ecf`) — dropped `internal/views/` package, `ApplyViewMsg`, palette commands `:save`/`:view`/`:del`, number-key view-recall. Query DSL on `/` covers the same use case; number keys `1`–`9` now just switch tabs.
+- **Claude dispatch hardening** — one-shot runs in background (`09efe9a`), interactive uses `/bin/sh` launcher script for fish/nushell portability (`1d3da6a`), log file mode `0600` (`abcbc57`), unified `finishSession` for done/failed (`76ab912`).
+- **Syncer cleanup** — dropped dead `stopped` atomic (`1dfe5bd`); documented the partial-prefetch self-heal (`2479075`).
 - **OSC 8 + per-row Ctrl+click** (`ee15110`, `4afeab0`, `7bc79f9`, `0134e37`) — every `#NNN` / `!NNN` reference and URL is a clickable, underlined-blue hyperlink; click handler tolerates ±1 row drift.
-- **Status-bar sync indicator** (`c5668c2`) — `starting…` / `prefetching N…` / `synced 5s ago` / `offline: <err>`.
 - **GraphQL bulk fetch + work-item widgets** (`b5b2788`, `d6c8076`, `18366eb`, `bdc28b8`) — schema v3 (status, parent, linked_items, child_items); `namespace.workItems` with widgets replaces REST issue sync.
 - **Multi-assignee** (`626629d`) — `GitLabIssue.Assignees []string`, JSON column in cache, propagated through UI/export/AI-toggle.
 - **Detail-pane header strip** (`03ade6f`, `dad4b5c`, `63cbb1d`, `65d15d0`, `95210c6`) — gh-style header rows with `(Xd ago)` dates; flush-left bold title; blank spacer; `—` placeholders for empty fields.
+- **Status-bar sync indicator** (`c5668c2`) — `starting…` / `prefetching N…` / `synced 5s ago` / `offline: <err>`.
 - **QueryLine commit-on-Enter** (`14de496`) — Enter hides the line while keeping the filter applied; Esc still clears.
-- **Sync simplification** (`06e1961`) — dropped `last_full_sync`; empty-cache check drives prefetch; added `task wipe-cache`.
-- **Default sync 60 s** (`9c24142`) — configurable via `cache.sync_interval_s`.
+- **Sync simplification** (`06e1961`, `9c24142`) — dropped `last_full_sync`; empty-cache check drives prefetch; added `task wipe-cache`; default sync 60 s configurable via `cache.sync_interval_s`.
 - **Claude Code integration** (`60db54e`) — `C` interactive, `P` one-shot, sessions tab.
 - **SQLite cache + Syncer + Query DSL** — the v2 backbone.
 - **Scope cut** (`e08cd1f`) — Docker/K8s/Logs/Dashboard/Pipelines removed.
