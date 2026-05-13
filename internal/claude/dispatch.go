@@ -80,28 +80,13 @@ func DispatchOneShot(req DispatchRequest) (Result, error) {
 	c.Stderr = logFile
 	if err := c.Start(); err != nil {
 		_ = logFile.Close()
-		_ = req.Store.Update(id, func(s *Session) {
-			s.Status = StatusFailed
-			s.LastSeenAt = time.Now()
-			s.ExitNote = err.Error()
-		})
+		finishSession(req.Store, id, err)
 		return Result{}, err
 	}
 
 	go func() {
 		defer func() { _ = logFile.Close() }()
-		runErr := c.Wait()
-		status := StatusDone
-		exitNote := ""
-		if runErr != nil {
-			status = StatusFailed
-			exitNote = runErr.Error()
-		}
-		_ = req.Store.Update(id, func(s *Session) {
-			s.Status = status
-			s.LastSeenAt = time.Now()
-			s.ExitNote = exitNote
-		})
+		finishSession(req.Store, id, c.Wait())
 	}()
 
 	note := fmt.Sprintf("one-shot %s running → %s", req.Ref, logPath)
@@ -232,4 +217,19 @@ func AttachCommand(env Env, sess Session) *exec.Cmd {
 // we constructed; not a general shell escaper.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// finishSession flips a session record to done (nil runErr) or failed
+// (non-nil), stamping LastSeenAt. Shared between the Start-failed and
+// Wait-completed paths in DispatchOneShot.
+func finishSession(store *Store, id string, runErr error) {
+	_ = store.Update(id, func(s *Session) {
+		s.LastSeenAt = time.Now()
+		if runErr != nil {
+			s.Status = StatusFailed
+			s.ExitNote = runErr.Error()
+			return
+		}
+		s.Status = StatusDone
+	})
 }
