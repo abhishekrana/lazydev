@@ -281,11 +281,15 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		// Queryline intercepts all keys while visible.
 		if t.queryline.Visible() {
-			esc, cmd := t.queryline.Update(msg)
+			esc, commit, cmd := t.queryline.Update(msg)
 			if esc {
 				t.queryline.Clear()
 				t.queryExpr = ""
 				return t, t.fetchIssues()
+			}
+			if commit {
+				t.queryline.Hide()
+				return t, nil
 			}
 			t.queryExpr = t.queryline.Value()
 			return t, tea.Batch(cmd, t.fetchIssues())

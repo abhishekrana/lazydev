@@ -65,25 +65,31 @@ func (q *QueryLine) SetMatchCount(n int) { q.matchHit = n }
 // SetStatus sets a small inline status hint (e.g., an error).
 func (q *QueryLine) SetStatus(s string) { q.statusFG = s }
 
-// Update processes a Bubble Tea message and returns a cmd. Returns
-// (true, cmd) if the key event was an "Esc" that should bubble up to
-// the caller as a close request — the caller is expected to call
-// q.Hide() in that case.
+// Update processes a Bubble Tea message and returns a cmd plus two
+// flags that bubble caller-relevant key events up:
 //
-// On Enter the query line stays open (typing more keys keeps live-
-// filtering); callers can decide separately whether Enter should
-// dismiss or commit to a saved view.
-func (q *QueryLine) Update(msg tea.Msg) (escPressed bool, cmd tea.Cmd) {
+//   - esc: user pressed Escape — caller should Clear() and drop the
+//     filter.
+//   - commit: user pressed Enter — caller should Hide() but keep the
+//     expression so the filter stays applied and focus can return to
+//     the sidebar.
+//
+// While neither flag fires, typing keeps live-filtering through
+// textinput.
+func (q *QueryLine) Update(msg tea.Msg) (esc, commit bool, cmd tea.Cmd) {
 	if !q.visible {
-		return false, nil
+		return false, false, nil
 	}
 	if km, ok := msg.(tea.KeyPressMsg); ok {
-		if km.String() == "esc" { //nolint:goconst // idiomatic key name
-			return true, nil
+		switch km.String() {
+		case "esc": //nolint:goconst // idiomatic key name
+			return true, false, nil
+		case "enter": //nolint:goconst // idiomatic key name
+			return false, true, nil
 		}
 	}
 	q.input, cmd = q.input.Update(msg)
-	return false, cmd
+	return false, false, cmd
 }
 
 // View renders the query line; empty string when hidden.

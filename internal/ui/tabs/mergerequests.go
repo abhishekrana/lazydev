@@ -235,11 +235,15 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		if t.queryline.Visible() {
-			esc, cmd := t.queryline.Update(msg)
+			esc, commit, cmd := t.queryline.Update(msg)
 			if esc {
 				t.queryline.Clear()
 				t.queryExpr = ""
 				return t, t.fetchMRs()
+			}
+			if commit {
+				t.queryline.Hide()
+				return t, nil
 			}
 			t.queryExpr = t.queryline.Value()
 			return t, tea.Batch(cmd, t.fetchMRs())
@@ -274,7 +278,7 @@ func (t *MRsTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 				t.notification = "Refreshing..."
 			}
 			return t, t.fetchMRs()
-		case "ctrl+w", "ctrl+W":
+		case "ctrl+w", "ctrl+W": //nolint:goconst // key names
 			t.pendingCtrlW = true
 			return t, nil
 		case "alt+w", "alt+W": //nolint:goconst // key names
