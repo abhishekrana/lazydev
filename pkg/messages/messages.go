@@ -32,6 +32,7 @@ type GitLabIssue struct {
 	ID, IID, ProjectID int64
 	Title              string
 	State              string
+	Status             string // work-item workflow status ("To do", "In progress", …)
 	Description        string
 	Labels             []string
 	Milestone          string
@@ -40,9 +41,31 @@ type GitLabIssue struct {
 	IterationDates     string // e.g. "Mar 22 – Apr 4, 2026"
 	Author             string
 	Assignees          []string
+	ParentIID          int64  // 0 when the item has no parent work item
+	ParentTitle        string // parent's title for display
 	WebURL             string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+// GitLabLinkedItem represents a typed link between two work items
+// (Blocked by / Blocks / Relates to).
+type GitLabLinkedItem struct {
+	IID      int64
+	Title    string
+	State    string
+	LinkType string // "blocks" | "is_blocked_by" | "relates_to"
+	WebURL   string
+}
+
+// GitLabChildItem represents a child work item in the parent-child
+// hierarchy widget.
+type GitLabChildItem struct {
+	IID      int64
+	Title    string
+	State    string
+	ItemType string // "Issue" | "Task" | "Objective" | …
+	WebURL   string
 }
 
 // GitLabMR represents a GitLab merge request.

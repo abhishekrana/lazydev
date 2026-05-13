@@ -48,7 +48,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 // currentSchemaVersion bumps whenever the on-disk shape changes in a
 // way that pre-existing rows can't be read. The Syncer repopulates the
 // cache from GitLab on next start, so dropping is acceptable.
-const currentSchemaVersion = "2"
+const currentSchemaVersion = "3"
 
 // migrate ensures the DB matches currentSchemaVersion. If the meta
 // row is missing or stale, it drops the data tables (issues, mrs,
@@ -72,6 +72,8 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		drops := []string{
 			`DROP TABLE IF EXISTS search_fts`,
 			`DROP TABLE IF EXISTS related_mrs`,
+			`DROP TABLE IF EXISTS linked_items`,
+			`DROP TABLE IF EXISTS child_items`,
 			`DROP TABLE IF EXISTS notes`,
 			`DROP TABLE IF EXISTS mrs`,
 			`DROP TABLE IF EXISTS issues`,
@@ -119,16 +121,17 @@ func (s *Store) UpsertIssues(ctx context.Context, items []messages.GitLabIssue) 
 	defer func() { _ = tx.Rollback() }()
 
 	const upsert = `INSERT INTO issues (
-		iid, id, project_id, title, description, state, labels, milestone,
-		iteration_id, iteration, iteration_dates, author, assignees, web_url,
-		created_at, updated_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		iid, id, project_id, title, description, state, status, labels, milestone,
+		iteration_id, iteration, iteration_dates, author, assignees,
+		parent_iid, parent_title, web_url, created_at, updated_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(iid) DO UPDATE SET
 		id              = excluded.id,
 		project_id      = excluded.project_id,
 		title           = excluded.title,
 		description     = excluded.description,
 		state           = excluded.state,
+		status          = excluded.status,
 		labels          = excluded.labels,
 		milestone       = excluded.milestone,
 		iteration_id    = excluded.iteration_id,
@@ -136,6 +139,8 @@ func (s *Store) UpsertIssues(ctx context.Context, items []messages.GitLabIssue) 
 		iteration_dates = excluded.iteration_dates,
 		author          = excluded.author,
 		assignees       = excluded.assignees,
+		parent_iid      = excluded.parent_iid,
+		parent_title    = excluded.parent_title,
 		web_url         = excluded.web_url,
 		created_at      = excluded.created_at,
 		updated_at      = excluded.updated_at`
@@ -144,9 +149,9 @@ func (s *Store) UpsertIssues(ctx context.Context, items []messages.GitLabIssue) 
 		labels, _ := json.Marshal(it.Labels)
 		assignees, _ := json.Marshal(it.Assignees)
 		if _, err := tx.ExecContext(ctx, upsert,
-			it.IID, it.ID, it.ProjectID, it.Title, it.Description, it.State,
+			it.IID, it.ID, it.ProjectID, it.Title, it.Description, it.State, it.Status,
 			string(labels), it.Milestone, it.IterationID, it.Iteration, it.IterationDates,
-			it.Author, string(assignees), it.WebURL,
+			it.Author, string(assignees), it.ParentIID, it.ParentTitle, it.WebURL,
 			it.CreatedAt.Unix(), it.UpdatedAt.Unix(),
 		); err != nil {
 			return fmt.Errorf("upsert issue %d: %w", it.IID, err)
@@ -398,6 +403,98 @@ func (s *Store) UpsertRelatedMRs(ctx context.Context, issueIID int64, mrs []mess
 	return tx.Commit()
 }
 
+// UpsertLinkedItems replaces the linked-item set for an issue.
+func (s *Store) UpsertLinkedItems(ctx context.Context, issueIID int64, items []messages.GitLabLinkedItem) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM linked_items WHERE issue_iid = ?`, issueIID); err != nil {
+		return err
+	}
+	const ins = `INSERT INTO linked_items (issue_iid, target_iid, link_type, title, state, web_url)
+		VALUES (?,?,?,?,?,?)`
+	for _, it := range items {
+		if _, err := tx.ExecContext(ctx, ins, issueIID, it.IID, it.LinkType, it.Title, it.State, it.WebURL); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ListLinkedItems returns the linked items for an issue, ordered by
+// link_type (blocks-style relations first) then by target IID.
+func (s *Store) ListLinkedItems(ctx context.Context, issueIID int64) ([]messages.GitLabLinkedItem, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT target_iid, link_type, title, state, web_url
+		 FROM linked_items WHERE issue_iid = ?
+		 ORDER BY link_type ASC, target_iid ASC`,
+		issueIID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []messages.GitLabLinkedItem
+	for rows.Next() {
+		var it messages.GitLabLinkedItem
+		if err := rows.Scan(&it.IID, &it.LinkType, &it.Title, &it.State, &it.WebURL); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// UpsertChildItems replaces the child-item set for a parent work item.
+func (s *Store) UpsertChildItems(ctx context.Context, parentIID int64, items []messages.GitLabChildItem) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM child_items WHERE parent_iid = ?`, parentIID); err != nil {
+		return err
+	}
+	const ins = `INSERT INTO child_items (parent_iid, child_iid, title, state, item_type, web_url)
+		VALUES (?,?,?,?,?,?)`
+	for _, it := range items {
+		if _, err := tx.ExecContext(ctx, ins, parentIID, it.IID, it.Title, it.State, it.ItemType, it.WebURL); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ListChildItems returns the children of a parent work item, ordered
+// by child IID.
+func (s *Store) ListChildItems(ctx context.Context, parentIID int64) ([]messages.GitLabChildItem, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT child_iid, title, state, item_type, web_url
+		 FROM child_items WHERE parent_iid = ?
+		 ORDER BY child_iid ASC`,
+		parentIID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []messages.GitLabChildItem
+	for rows.Next() {
+		var it messages.GitLabChildItem
+		if err := rows.Scan(&it.IID, &it.Title, &it.State, &it.ItemType, &it.WebURL); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) listNotes(ctx context.Context, kind string, parentIID int64) ([]messages.GitLabNote, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT author, body, created_at FROM notes
@@ -491,9 +588,9 @@ func (s *Store) PruneOlderThan(ctx context.Context, cutoff time.Time) (int64, er
 
 // --- Scanning helpers ---
 
-const issueCols = `iid, id, project_id, title, description, state, labels, milestone,
-	iteration_id, iteration, iteration_dates, author, assignees, web_url,
-	created_at, updated_at`
+const issueCols = `iid, id, project_id, title, description, state, status, labels, milestone,
+	iteration_id, iteration, iteration_dates, author, assignees,
+	parent_iid, parent_title, web_url, created_at, updated_at`
 
 const mrCols = `iid, id, project_id, title, description, state,
 	source_branch, target_branch, author, assignees, reviewers, labels,
@@ -508,9 +605,10 @@ func scanIssue(r rowScanner) (messages.GitLabIssue, error) {
 	var labels, assignees string
 	var created, updated int64
 	if err := r.Scan(
-		&it.IID, &it.ID, &it.ProjectID, &it.Title, &it.Description, &it.State,
+		&it.IID, &it.ID, &it.ProjectID, &it.Title, &it.Description, &it.State, &it.Status,
 		&labels, &it.Milestone, &it.IterationID, &it.Iteration, &it.IterationDates,
-		&it.Author, &assignees, &it.WebURL, &created, &updated,
+		&it.Author, &assignees, &it.ParentIID, &it.ParentTitle, &it.WebURL,
+		&created, &updated,
 	); err != nil {
 		return it, err
 	}

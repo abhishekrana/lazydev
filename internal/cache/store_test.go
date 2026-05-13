@@ -144,6 +144,67 @@ func TestStoreRoundtrip(t *testing.T) {
 	}
 }
 
+func TestLinkedAndChildItemsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	s, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Empty cache returns empty slices.
+	empty, err := s.ListLinkedItems(ctx, 100)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty ListLinkedItems: %+v err=%v", empty, err)
+	}
+	emptyC, err := s.ListChildItems(ctx, 100)
+	if err != nil || len(emptyC) != 0 {
+		t.Fatalf("empty ListChildItems: %+v err=%v", emptyC, err)
+	}
+
+	linked := []messages.GitLabLinkedItem{
+		{IID: 201, Title: "Stepper rollout", State: "closed", LinkType: "is_blocked_by", WebURL: "u/201"},
+		{IID: 202, Title: "Rename manager", State: "closed", LinkType: "is_blocked_by", WebURL: "u/202"},
+		{IID: 210, Title: "Phase 3", State: "opened", LinkType: "blocks", WebURL: "u/210"},
+		{IID: 220, Title: "Stepper rollout v2", State: "opened", LinkType: "relates_to", WebURL: "u/220"},
+	}
+	if err := s.UpsertLinkedItems(ctx, 100, linked); err != nil {
+		t.Fatalf("UpsertLinkedItems: %v", err)
+	}
+	got, err := s.ListLinkedItems(ctx, 100)
+	if err != nil {
+		t.Fatalf("ListLinkedItems: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 linked items, got %d", len(got))
+	}
+
+	// Re-upsert replaces the set (not merges).
+	if err := s.UpsertLinkedItems(ctx, 100, linked[:1]); err != nil {
+		t.Fatalf("re-upsert linked: %v", err)
+	}
+	got, _ = s.ListLinkedItems(ctx, 100)
+	if len(got) != 1 || got[0].IID != 201 {
+		t.Fatalf("expected single linked item after re-upsert, got %+v", got)
+	}
+
+	children := []messages.GitLabChildItem{
+		{IID: 301, Title: "Sub-task A", State: "closed", ItemType: "Task", WebURL: "u/301"},
+		{IID: 302, Title: "Sub-task B", State: "opened", ItemType: "Task", WebURL: "u/302"},
+	}
+	if err := s.UpsertChildItems(ctx, 100, children); err != nil {
+		t.Fatalf("UpsertChildItems: %v", err)
+	}
+	gotC, err := s.ListChildItems(ctx, 100)
+	if err != nil {
+		t.Fatalf("ListChildItems: %v", err)
+	}
+	if len(gotC) != 2 || gotC[0].IID != 301 || gotC[1].IID != 302 {
+		t.Fatalf("ListChildItems wrong: %+v", gotC)
+	}
+}
+
 func TestStorePrune(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "cache.db")

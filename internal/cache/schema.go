@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS issues (
     title           TEXT    NOT NULL DEFAULT '',
     description     TEXT    NOT NULL DEFAULT '',
     state           TEXT    NOT NULL DEFAULT 'opened',
+    status          TEXT    NOT NULL DEFAULT '',
     labels          TEXT    NOT NULL DEFAULT '[]',
     milestone       TEXT    NOT NULL DEFAULT '',
     iteration_id    INTEGER NOT NULL DEFAULT 0,
@@ -18,6 +19,8 @@ CREATE TABLE IF NOT EXISTS issues (
     iteration_dates TEXT    NOT NULL DEFAULT '',
     author          TEXT    NOT NULL DEFAULT '',
     assignees       TEXT    NOT NULL DEFAULT '[]',
+    parent_iid      INTEGER NOT NULL DEFAULT 0,
+    parent_title    TEXT    NOT NULL DEFAULT '',
     web_url         TEXT    NOT NULL DEFAULT '',
     created_at      INTEGER NOT NULL DEFAULT 0,
     updated_at      INTEGER NOT NULL DEFAULT 0
@@ -66,6 +69,26 @@ CREATE TABLE IF NOT EXISTS related_mrs (
     source_branch TEXT    NOT NULL DEFAULT '',
     web_url       TEXT    NOT NULL DEFAULT '',
     PRIMARY KEY (issue_iid, mr_iid)
+);
+
+CREATE TABLE IF NOT EXISTS linked_items (
+    issue_iid  INTEGER NOT NULL,
+    target_iid INTEGER NOT NULL,
+    link_type  TEXT    NOT NULL DEFAULT '',
+    title      TEXT    NOT NULL DEFAULT '',
+    state      TEXT    NOT NULL DEFAULT '',
+    web_url    TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (issue_iid, target_iid)
+);
+
+CREATE TABLE IF NOT EXISTS child_items (
+    parent_iid INTEGER NOT NULL,
+    child_iid  INTEGER NOT NULL,
+    title      TEXT    NOT NULL DEFAULT '',
+    state      TEXT    NOT NULL DEFAULT '',
+    item_type  TEXT    NOT NULL DEFAULT '',
+    web_url    TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (parent_iid, child_iid)
 );
 
 CREATE TABLE IF NOT EXISTS meta (
