@@ -8,18 +8,27 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
-// linkify wraps text in an OSC 8 hyperlink so modern terminals render
-// it clickable and apply their own link styling (Ghostty / WezTerm /
-// kitty underline natively). Terminals without OSC 8 drop the escape
-// silently and show plain text. Returns the original text unchanged
-// when url is empty.
+// linkify wraps text in an OSC 8 hyperlink (clickable in modern
+// terminals) plus inline SGR codes that underline the text in
+// Solarized blue, matching how glamour renders Markdown links in the
+// body. Ghostty's OSC 8 hover-only underline isn't enough — we want
+// links visually distinct at first paint.
 //
-// Sequence: ESC ] 8 ; ; URL ESC \  TEXT  ESC ] 8 ; ; ESC \
+// Returns the original text unchanged when url is empty.
+//
+// Sequence: ESC]8;;URL ESC\ ESC[4;38;2;38;139;210m TEXT ESC[0m ESC]8;;ESC\
 func linkify(text, url string) string {
 	if url == "" {
 		return text
 	}
-	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+	const (
+		oscOpen  = "\x1b]8;;"
+		oscMid   = "\x1b\\"
+		sgrLink  = "\x1b[4;38;2;38;139;210m" // underline + SolBlue (#268BD2)
+		sgrReset = "\x1b[0m"
+		oscClose = "\x1b]8;;\x1b\\"
+	)
+	return oscOpen + url + oscMid + sgrLink + text + sgrReset + oscClose
 }
 
 // formatParent renders the Parent row value for the header strip.
