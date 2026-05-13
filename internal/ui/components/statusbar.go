@@ -12,6 +12,10 @@ type StatusBar struct {
 	Width   int
 	Context string
 	Message string
+	Sync    string // sync indicator, e.g. "prefetching 120" or "synced 5s ago"
+	// SyncTone influences the rendered colour of Sync — "" (default
+	// neutral), "ok" (green), "warn" (yellow), "err" (red).
+	SyncTone string
 }
 
 // NewStatusBar creates a new status bar.
@@ -29,9 +33,19 @@ func (s StatusBar) View() string {
 		theme.StatusBarKeyStyle.Render("[?]"),
 	)
 
-	right := ""
+	parts := make([]string, 0, 2)
+	if s.Sync != "" {
+		parts = append(parts, renderSync(s.Sync, s.SyncTone))
+	}
 	if s.Context != "" {
-		right = fmt.Sprintf("ctx: %s", s.Context)
+		parts = append(parts, fmt.Sprintf("ctx: %s", s.Context))
+	}
+	right := ""
+	for i, p := range parts {
+		if i > 0 {
+			right += "  "
+		}
+		right += p
 	}
 
 	gap := s.Width - lipgloss.Width(keys) - lipgloss.Width(right)
@@ -42,4 +56,17 @@ func (s StatusBar) View() string {
 	content := keys + fmt.Sprintf("%*s%s", gap, "", right)
 
 	return theme.StatusBarStyle.Width(s.Width).Render(content)
+}
+
+func renderSync(text, tone string) string {
+	switch tone {
+	case "ok":
+		return theme.LogInfoStyle.Render(text)
+	case "warn":
+		return theme.LogWarnStyle.Render(text)
+	case "err":
+		return theme.LogErrorStyle.Render(text)
+	default:
+		return text
+	}
 }

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -39,6 +41,9 @@ type RootModel struct {
 	width      int
 	height     int
 	ready      bool
+	// sync mirrors the latest SyncStatusMsg so View() can render an
+	// indicator on the right of the status bar.
+	sync messages.SyncStatusMsg
 }
 
 // NewRootModel creates the root model with the given tabs and the
@@ -160,6 +165,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+	}
+
+	// SyncStatusMsg drives the status-bar indicator and is also
+	// broadcast below so tabs can react if needed.
+	if s, ok := msg.(messages.SyncStatusMsg); ok {
+		m.sync = s
 	}
 
 	// Broadcast data messages to all tabs so each tab receives its own async results.
@@ -291,6 +302,9 @@ func (m RootModel) View() tea.View {
 		}
 	}
 
+	// Sync indicator on the right of the status bar.
+	m.statusBar.Sync, m.statusBar.SyncTone = formatSyncIndicator(m.sync)
+
 	tabBarView := m.tabBar.View()
 
 	var statusBarView string
@@ -318,6 +332,59 @@ func (m RootModel) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+// formatSyncIndicator renders the syncer's current state as a short
+// status-bar string + a tone hint ("ok" / "warn" / "err" / "").
+// The empty zero-value SyncStatusMsg before the first event renders
+// as a neutral "starting…" so users know lazydev is alive on cold
+// start.
+func formatSyncIndicator(s messages.SyncStatusMsg) (text, tone string) {
+	switch s.State {
+	case "":
+		return "starting…", ""
+	case "prefetching":
+		if s.Progress != "" {
+			return "prefetching " + s.Progress + "…", ""
+		}
+		return "prefetching…", ""
+	case "syncing":
+		return "syncing…", ""
+	case "idle":
+		if s.LastSyncAt.IsZero() {
+			return "synced", "ok"
+		}
+		return "synced " + relativeAgo(s.LastSyncAt), "ok"
+	case "offline":
+		if s.Err != nil {
+			return "offline: " + truncate(s.Err.Error(), 60), "err"
+		}
+		return "offline", "err"
+	default:
+		return s.State, ""
+	}
+}
+
+// relativeAgo returns "5s ago", "12m ago", "3h ago", "2d ago".
+func relativeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return strconv.Itoa(int(d.Seconds())) + "s ago"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes())) + "m ago"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d.Hours())) + "h ago"
+	default:
+		return strconv.Itoa(int(d.Hours()/24)) + "d ago"
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func (m RootModel) contentHeight() int {
