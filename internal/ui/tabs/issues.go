@@ -180,7 +180,7 @@ func (t *IssuesTab) Update(msg tea.Msg) (ui.TabModel, tea.Cmd) {
 			t.notification = fmt.Sprintf("issue detail: %v", msg.err)
 			return t, nil
 		}
-		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes, msg.relatedMRs, t.detailPane.Width())
+		detail := gitlabpkg.FormatIssueDetail(msg.issue, msg.notes, msg.relatedMRs, msg.linked, msg.children, t.detailPane.Width())
 		title := gitlabpkg.FormatIssueTitle(msg.issue)
 		t.detailPane.SetContent(title, detail)
 		return t, nil
@@ -535,7 +535,12 @@ func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 		if err != nil || cached == nil {
 			return nil
 		}
-		return issueDetailResultMsg{seq: seq, issue: *cached, notes: notes, relatedMRs: related}
+		linked, _ := t.store.ListLinkedItems(ctx, iid)
+		children, _ := t.store.ListChildItems(ctx, iid)
+		return issueDetailResultMsg{
+			seq: seq, issue: *cached, notes: notes,
+			relatedMRs: related, linked: linked, children: children,
+		}
 	}
 	apiCmd := func() tea.Msg {
 		issue, notes, related, linked, children, err := t.client.GetIssue(iid)
@@ -547,7 +552,10 @@ func (t *IssuesTab) selectIssue(id string) tea.Cmd {
 			_ = t.store.UpsertLinkedItems(ctx, iid, linked)
 			_ = t.store.UpsertChildItems(ctx, iid, children)
 		}
-		return issueDetailResultMsg{seq: seq, issue: issue, notes: notes, relatedMRs: related, err: err}
+		return issueDetailResultMsg{
+			seq: seq, issue: issue, notes: notes,
+			relatedMRs: related, linked: linked, children: children, err: err,
+		}
 	}
 	return tea.Batch(cacheCmd, apiCmd)
 }
@@ -795,6 +803,8 @@ type issueDetailResultMsg struct {
 	issue      messages.GitLabIssue
 	notes      []messages.GitLabNote
 	relatedMRs []messages.GitLabIssueMR
+	linked     []messages.GitLabLinkedItem
+	children   []messages.GitLabChildItem
 	err        error
 }
 

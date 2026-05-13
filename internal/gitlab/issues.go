@@ -257,9 +257,18 @@ func convertIssue(issue *gitlab.Issue) messages.GitLabIssue {
 	}
 }
 
-// FormatIssueDetail formats an issue, related MRs, and notes for the detail pane.
-// width is used for word wrapping markdown content.
-func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, relatedMRs []messages.GitLabIssueMR, width int) string {
+// FormatIssueDetail formats an issue, its widgets, related MRs, and
+// notes for the detail pane. width is used for word wrapping markdown
+// content. linked + children are rendered as footer sections between
+// Related MRs and Comments; empty slices are skipped entirely.
+func FormatIssueDetail(
+	issue messages.GitLabIssue,
+	notes []messages.GitLabNote,
+	relatedMRs []messages.GitLabIssueMR,
+	linked []messages.GitLabLinkedItem,
+	children []messages.GitLabChildItem,
+	width int,
+) string {
 	markdownWidth = width
 	var b strings.Builder
 
@@ -275,10 +284,10 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 	// as placeholders today — wiring is a follow-up.
 	rows := []labeled{
 		{"State", FormatState(issue.State)},
-		{"Status", ""},
+		{"Status", issue.Status},
 		{"Assignees", strings.Join(issue.Assignees, ", ")},
 		{"Labels", strings.Join(issue.Labels, ", ")},
-		{"Parent", ""},
+		{"Parent", formatParent(issue.ParentIID, issue.ParentTitle)},
 		{"Weight", ""},
 		{"Milestone", issue.Milestone},
 		{"Iteration", iter},
@@ -308,6 +317,16 @@ func FormatIssueDetail(issue messages.GitLabIssue, notes []messages.GitLabNote, 
 				fmt.Fprintf(&b, "      %s\n", mr.SourceBranch)
 			}
 		}
+	}
+
+	if len(children) > 0 {
+		b.WriteString("\n" + rule(width) + "\n")
+		b.WriteString(formatChildItems(children))
+	}
+
+	if len(linked) > 0 {
+		b.WriteString("\n" + rule(width) + "\n")
+		b.WriteString(formatLinkedItems(linked))
 	}
 
 	if len(notes) > 0 {

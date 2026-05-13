@@ -8,6 +8,72 @@ import (
 	"github.com/abhishek-rana/lazydev/pkg/messages"
 )
 
+// formatParent renders the Parent row value for the header strip.
+// Returns "" when the issue has no parent so the strip helper renders
+// the placeholder.
+func formatParent(iid int64, title string) string {
+	if iid == 0 && title == "" {
+		return ""
+	}
+	if iid == 0 {
+		return title
+	}
+	if title == "" {
+		return fmt.Sprintf("#%d", iid)
+	}
+	return fmt.Sprintf("#%d %s", iid, title)
+}
+
+// formatChildItems renders the "Child items (N)" footer block.
+// Each child is `<glyph> #<iid> <title> [<type>]` aligned by glyph.
+func formatChildItems(items []messages.GitLabChildItem) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Child items (%d)\n", len(items))
+	for _, c := range items {
+		glyph := stateGlyph(c.State)
+		typeSuffix := ""
+		if c.ItemType != "" {
+			typeSuffix = " [" + c.ItemType + "]"
+		}
+		fmt.Fprintf(&b, "  %s #%d %s%s\n", glyph, c.IID, c.Title, typeSuffix)
+	}
+	return b.String()
+}
+
+// linkedGroupOrder is the fixed display order for typed link groups —
+// blockers first (most actionable), then what this item blocks, then
+// loose relations.
+var linkedGroupOrder = []struct {
+	key, label string
+}{
+	{"is_blocked_by", "Blocked by"},
+	{"blocks", "Blocks"},
+	{"relates_to", "Relates to"},
+}
+
+// formatLinkedItems renders the "Linked items (N)" footer block,
+// grouped by relation type in fixed order. Empty groups are skipped.
+func formatLinkedItems(items []messages.GitLabLinkedItem) string {
+	groups := make(map[string][]messages.GitLabLinkedItem)
+	for _, it := range items {
+		groups[it.LinkType] = append(groups[it.LinkType], it)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Linked items (%d)\n", len(items))
+	for _, g := range linkedGroupOrder {
+		set := groups[g.key]
+		if len(set) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "  %s\n", g.label)
+		for _, it := range set {
+			glyph := stateGlyph(it.State)
+			fmt.Fprintf(&b, "    %s #%d %s  [%s]\n", glyph, it.IID, it.Title, it.State)
+		}
+	}
+	return b.String()
+}
+
 // formatDateWithAge renders a timestamp as "2026-05-04 00:06 (9d ago)".
 // Returns an empty string for zero times.
 func formatDateWithAge(t time.Time) string {
