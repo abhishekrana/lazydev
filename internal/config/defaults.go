@@ -14,7 +14,7 @@ func DefaultConfig() *Config {
 		},
 		Cache: CacheConfig{
 			DBPath:             defaultCacheDBPath(),
-			SyncIntervalS:      20,
+			SyncIntervalS:      60,
 			PrefetchWindowDays: 30,
 		},
 		Export: ExportConfig{

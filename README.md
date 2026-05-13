@@ -172,7 +172,7 @@ gitlab:
 
 cache:
   db_path: "" # default: $XDG_STATE_HOME/lazydev/cache.db
-  sync_interval_s: 20
+  sync_interval_s: 60
   prefetch_window_days: 30 # initial backfill window
 
 export:
