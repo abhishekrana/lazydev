@@ -21,6 +21,7 @@ Built with Go and Bubble Tea v2. Solarized Light by default.
 - **MR review** — `R` on an MR opens neovim with `DiffviewOpen` against the target branch.
 - **Multi-user tracking** — track yourself plus `additional_users` (bot accounts) across issues and MRs.
 - **Vim + arrow keys** — `hjkl`, `gg` / `G`, `Ctrl+W W` / `Alt+W` to switch pane focus.
+- **JSON CLI over the same cache** — `lazydev search`, `lazydev issue list|show`, `lazydev mr list|show`. Read-only, accepts the same query DSL as the TUI. Use it from any shell, or let Claude Code drive it via the bundled skill (`lazydev install-skill`).
 
 ## Installation
 
@@ -51,6 +52,22 @@ cd ~/my-gitlab-project && lazydev
 GitLab auth is auto-detected in this order: `gitlab.token` in config, `GITLAB_TOKEN` env, `~/.config/glab-cli/config.yml`. Lazydev refuses to start if GitLab is not configured.
 
 Claude Code integration activates automatically when the `claude` binary is on `PATH`. `tmux` is required for the interactive (`C`) dispatch path; the one-shot path (`P`) works without it.
+
+### CLI: query the cache from any shell
+
+The same binary exposes read-only subcommands over the cache so other tools (or another Claude Code session in a different repo) can pull issue / MR context without opening the TUI:
+
+```bash
+lazydev search 'rate limit' --pretty           # FTS5 across cached issues + MRs
+lazydev issue list --query 'assignee:@me state:open' --pretty
+lazydev issue show 482 --with-notes --pretty   # single issue + linked + child items
+lazydev mr   list --query 'state:open label:area:auth updated:>14d'
+lazydev mr   show 913 --pretty
+```
+
+List commands emit NDJSON by default (one object per line, pipeline-friendly with `jq -c`); pass `--pretty` for an indented JSON array. The query DSL is identical to the TUI's (`assignee:@me`, `state:open`, `label:foo`, `updated:>7d`, …).
+
+Run `lazydev install-skill` once per machine to write a Claude Code skill to `~/.claude/skills/lazydev/SKILL.md` — the skill teaches Claude Code when and how to invoke these subcommands. The skill text is embedded in the binary, so no repo files need to live on the user's machine.
 
 ## Workflow
 

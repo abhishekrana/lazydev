@@ -22,8 +22,10 @@ go build ./...    # compile-check all packages
 
 ## Project Structure
 
-- `cmd/lazydev/main.go` — entry: loads config, builds `SharedState`, wires `Syncer.Events()` into the Bubble Tea program before `StartSync`, constructs `Issues`/`MRs`/`Claude` tabs.
-- `internal/app/app.go` — `SharedState`: `GitLabClient`, `Cache` (SQLite store), `Syncer`, `Config`, `ClaudeEnv`, `ClaudeStore`. Fails closed if GitLab isn't configured; warns (does not fail) when `claude` isn't on PATH.
+- `cmd/lazydev/main.go` — entry: dispatches subcommands (`search`, `issue`, `mr`, `install-skill`) before falling through to `runTUI`. TUI path loads config, builds `SharedState`, wires `Syncer.Events()` into the Bubble Tea program before `StartSync`, constructs `Issues`/`MRs`/`Claude` tabs.
+- `cmd/lazydev/cli_*.go` — read-only CLI surface over the cache. `cli_output.go` (helpers: `openCache`, `writeJSON`/`writeList`, `usage`/`writeLines`, `reorderFlags` so positionals can appear before or after flags); `cli_query.go` (`parseQuery` resolves `@me` from the `gitlab_username` row in `meta`, so the CLI never hits GitLab); `cli_search.go`, `cli_issues.go`, `cli_mrs.go` (per-DTO `*JSON` structs with `snake_case` tags — JSON contract lives in the CLI layer, `pkg/messages` stays untouched); `cli_skill.go` + `//go:embed skill.md` for `install-skill`. Subcommand list output is NDJSON by default; `--pretty` flips to indented JSON arrays.
+- `cmd/lazydev/skill.md` — Claude Code skill body, compiled into the binary via `//go:embed`. Not delivered as a repo file to end users — `lazydev install-skill` writes it to `~/.claude/skills/lazydev/SKILL.md`.
+- `internal/app/app.go` — `SharedState`: `GitLabClient`, `Cache` (SQLite store), `Syncer`, `Config`, `ClaudeEnv`, `ClaudeStore`. Fails closed if GitLab isn't configured; warns (does not fail) when `claude` isn't on PATH. Persists the authenticated GitLab username into the cache's `meta` table (`gitlab_username`) on startup so the read-only CLI subcommands can resolve `@me` in the query DSL without their own credential.
 - `internal/cache/` — SQLite mirror (`modernc.org/sqlite`, pure Go, no CGo).
   - `schema.go` — `schemaSQL` defines `issues` / `mrs` / `notes` / `related_mrs` / `linked_items` / `child_items` / `meta` / `search_fts` (FTS5). `issues` carries `status` / `parent_iid` / `parent_title` / `assignees` (JSON) for the work-item widgets.
   - `store.go` — open + scan + upsert. `currentSchemaVersion` and `migrate()` drop the data tables on a version mismatch; on next launch the Syncer repopulates from GitLab. New helpers: `UpsertLinkedItems` / `ListLinkedItems` / `UpsertChildItems` / `ListChildItems`.
@@ -99,6 +101,7 @@ go build ./...    # compile-check all packages
 
 Issues/MRs focus + SQLite cache + Claude Code handoff is the v2 product. Recent changes (newest first):
 
+- **Cache CLI + embedded Claude skill** (`f581429`) — five read-only subcommands (`lazydev search`, `lazydev issue list|show`, `lazydev mr list|show`) emit JSON / NDJSON over the same `cache.Store` + query DSL. The TUI now stashes `gitlab_username` in `meta` on startup so the CLI can resolve `@me` without a GitLab credential. `lazydev install-skill` writes a `//go:embed`'d `SKILL.md` to `~/.claude/skills/lazydev/`, keeping single-binary distribution (no repo files required on the end user's machine). Designed for cross-repo Claude Code sessions to pull issue/MR context from the same local cache the TUI is keeping fresh.
 - **Cut saved views** (`be28ecf`) — dropped `internal/views/` package, `ApplyViewMsg`, palette commands `:save`/`:view`/`:del`, number-key view-recall. Query DSL on `/` covers the same use case; number keys `1`–`9` now just switch tabs.
 - **Claude dispatch hardening** — one-shot runs in background (`09efe9a`), interactive uses `/bin/sh` launcher script for fish/nushell portability (`1d3da6a`), log file mode `0600` (`abcbc57`), unified `finishSession` for done/failed (`76ab912`).
 - **Syncer cleanup** — dropped dead `stopped` atomic (`1dfe5bd`); documented the partial-prefetch self-heal (`2479075`).
