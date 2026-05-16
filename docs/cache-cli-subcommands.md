@@ -4,9 +4,10 @@
 
 `lazydev` already maintains a fresh local mirror of GitLab issues/MRs in SQLite (~8 MB, WAL mode, FTS5 index). We want Claude Code to be able to use this mirror as a knowledge base during pair-programming — e.g. "show me the open tickets blocking #123", "summarize the discussion on !456", "find all MRs touching the auth middleware".
 
-**Distribution constraint that drives the design**: lazydev ships as a standalone binary that other developers install. End users do not clone the repo. So Claude-facing docs cannot live in `.claude/skills/…` or `CLAUDE.md` checked into this repo — those don't travel with the binary. The docs have to be *inside* the binary.
+**Distribution constraint that drives the design**: lazydev ships as a standalone binary that other developers install. End users do not clone the repo. So Claude-facing docs cannot live in `.claude/skills/…` or `CLAUDE.md` checked into this repo — those don't travel with the binary. The docs have to be _inside_ the binary.
 
 Researched alternatives (MCP server, Anthropic's reference SQLite MCP server, repo-side SKILL.md) and landed on **CLI subcommands with thorough `--help` + an opt-in `install-skill` command that writes an embedded SKILL.md to the user's home**. References:
+
 - Skills vs MCP framing: [Verdent](https://www.verdent.ai/guides/claude-skills-vs-mcp), [Morph](https://www.morphllm.com/claude-code-skills-mcp-plugins).
 - Shell-attached agents prefer CLIs over MCP: [Hutchison](https://allen.hutchison.org/2026/03/14/mcp-isnt-dead-you-just-arent-the-target-audience/).
 - Anthropic's reference SQLite MCP server was archived with an unpatched SQL injection — don't reuse it.
@@ -50,18 +51,21 @@ All five query subcommands are thin wrappers — no new business logic, no new S
 ## Files to create / modify
 
 ### Modified
+
 - **`cmd/lazydev/main.go`** — wrap current body in `runTUI()` and add `switch os.Args[1]` dispatcher. Stdlib `flag.NewFlagSet` per subcommand; no new dep.
 
 ### New (all under `cmd/lazydev/`)
+
 - **`cli_query.go`** — DSL parsing → `cache.Filter` (calls existing `internal/query.Parse`, reuses the same `@me`/`@ai`/`@none` resolution as the TUI).
 - **`cli_issues.go`** — `cmdIssueList`, `cmdIssueShow`.
 - **`cli_mrs.go`** — `cmdMRList`, `cmdMRShow`.
 - **`cli_search.go`** — `cmdSearch` over `Store.Search`.
 - **`cli_output.go`** — JSON helpers: NDJSON for lists, single object for show, array for search. `--pretty` flag for human use.
 - **`cli_skill.go`** — `cmdInstallSkill`. Uses `//go:embed skill.md` to bundle the skill content into the binary.
-- **`cmd/lazydev/skill.md`** — the SKILL.md content (frontmatter + body). Lives in the repo source tree but gets compiled *into* the binary via `embed`; not delivered as a file to end users.
+- **`cmd/lazydev/skill.md`** — the SKILL.md content (frontmatter + body). Lives in the repo source tree but gets compiled _into_ the binary via `embed`; not delivered as a file to end users.
 
 ### Reused (no changes)
+
 - `internal/cache/store.go` — `Open`, `ListIssues`, `GetIssue`, `ListMRs`, `GetMR`, `ListLinkedItems`, `ListChildItems`, `Search`.
 - `internal/cache/filter.go` — `Filter{State, Assignee, Author, Labels, Text, UpdatedAfter, UpdatedBefore, Limit}`.
 - `internal/cache/search.go` — `SearchHit{Kind, IID, Title, Snippet, Score}`.
@@ -70,6 +74,7 @@ All five query subcommands are thin wrappers — no new business logic, no new S
 - `pkg/messages/messages.go` — `GitLabIssue`, `GitLabMR`, `GitLabNote`, `GitLabLinkedItem`, `GitLabChildItem`. Add JSON tags where missing.
 
 ### Key behavior
+
 - CLI does **not** open a GitLab client or start the Syncer — pure cache reader. The TUI keeps the cache fresh.
 - If the cache file is missing or empty, the CLI exits non-zero with `run lazydev once to populate the cache`. No silent zero results.
 - SQLite WAL mode → "TUI writing + CLI reading" is safe and lock-free.
@@ -89,6 +94,7 @@ mr show:      {"mr":{…},"notes":[…]}
 ## Embedded skill content (`cmd/lazydev/skill.md`)
 
 Frontmatter:
+
 ```yaml
 ---
 name: lazydev
@@ -97,6 +103,7 @@ description: Query the local GitLab issues/MRs knowledge base maintained by lazy
 ```
 
 Body covers:
+
 1. **When to invoke** — trigger phrases ("issue #N", "MR !N", "what's blocking X", "find tickets about Y").
 2. **Commands & flags** — verbatim copy of the JSON contract above.
 3. **Query DSL primer** — `assignee:@me|@ai|@none|@any`, `label:foo`, `state:open|closed|merged|all`, `kind:issue|mr`, `updated:>7d`, plus bare fuzzy terms. AND-joined.

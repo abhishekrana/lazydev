@@ -53,6 +53,12 @@ func NewSharedState(cfg *config.Config) (*SharedState, error) {
 	state.Cache = store
 
 	if state.GitLabClient != nil {
+		// Persist the authenticated username into the cache so out-of-band
+		// readers (the `lazydev search`/`issue list` subcommands invoked
+		// from a shell or by Claude Code) can resolve `@me` in the query
+		// DSL without needing a GitLab credential of their own.
+		_ = store.SetMeta(ctx, "gitlab_username", state.GitLabClient.Username)
+
 		syncInterval := time.Duration(cfg.Cache.SyncIntervalS) * time.Second
 		window := time.Duration(cfg.Cache.PrefetchWindowDays) * 24 * time.Hour
 		state.Syncer = cache.NewSyncer(store, state.GitLabClient, syncInterval, window)

@@ -18,6 +18,45 @@ import (
 func main() {
 	cfg := config.Load()
 
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "search":
+			os.Exit(cmdSearch(cfg, os.Args[2:]))
+		case "issue":
+			os.Exit(cmdIssue(cfg, os.Args[2:]))
+		case "mr":
+			os.Exit(cmdMR(cfg, os.Args[2:]))
+		case "install-skill":
+			os.Exit(cmdInstallSkill(os.Args[2:]))
+		case helpFlagShort, "-h", helpFlagLong:
+			printRootHelp()
+			return
+		case "tui":
+			// explicit pass-through, fall through to TUI launch
+		default:
+			fmt.Fprintf(os.Stderr, "lazydev: unknown command %q\n\n", os.Args[1])
+			printRootHelp()
+			os.Exit(2)
+		}
+	}
+
+	runTUI(cfg)
+}
+
+func printRootHelp() {
+	fmt.Fprintln(os.Stderr, "lazydev — terminal cockpit for GitLab issues/MRs with Claude Code")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Usage:")
+	fmt.Fprintln(os.Stderr, "  lazydev                   launch the TUI (default)")
+	fmt.Fprintln(os.Stderr, "  lazydev search <q>        FTS5 search across cached issues + MRs")
+	fmt.Fprintln(os.Stderr, "  lazydev issue list|show   read cached issues as JSON")
+	fmt.Fprintln(os.Stderr, "  lazydev mr    list|show   read cached MRs as JSON")
+	fmt.Fprintln(os.Stderr, "  lazydev install-skill     install the Claude Code skill (~/.claude/skills/lazydev/)")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Run any subcommand with --help for its flags.")
+}
+
+func runTUI(cfg *config.Config) {
 	state, err := app.NewSharedState(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
