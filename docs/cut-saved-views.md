@@ -16,10 +16,12 @@ remains intact.
 ## What gets removed
 
 ### Files
+
 - `internal/views/views.go` — YAML-backed store, atomic write, defaults
 - `internal/views/views_test.go`
 
 ### Code references
+
 - `pkg/messages/messages.go` — `ApplyViewMsg` type + section comment
 - `internal/app/app.go` — `Views` field on `SharedState`, `views.Load` call,
   warning on load failure
@@ -37,6 +39,7 @@ remains intact.
 - `internal/ui/components/help.go` — drop the two saved-view help rows
 
 ### Config / on-disk
+
 - No config keys to drop (views path was hardcoded to `~/.config/lazydev/views.yaml`)
 - `views.yaml` is left in place on user disks; lazydev simply ignores it
 
@@ -50,6 +53,7 @@ remains intact.
 ## Verification
 
 After the cut:
+
 - `go build ./...` clean
 - `go vet ./...` clean
 - `task lint` clean

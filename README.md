@@ -78,14 +78,14 @@ GitLab becomes the queue manager, the bot account is the queue holder, lazydev g
 
 ### Global
 
-| Key            | Action                                           |
-| -------------- | ------------------------------------------------ |
-| `q` / `Ctrl+C` | Quit                                             |
-| `Tab`          | Next tab                                         |
-| `Shift+Tab`    | Previous tab                                     |
-| `1`–`9`        | Switch tab by index                              |
-| `?`            | Help overlay                                     |
-| `:`            | Command palette                                  |
+| Key            | Action              |
+| -------------- | ------------------- |
+| `q` / `Ctrl+C` | Quit                |
+| `Tab`          | Next tab            |
+| `Shift+Tab`    | Previous tab        |
+| `1`–`9`        | Switch tab by index |
+| `?`            | Help overlay        |
+| `:`            | Command palette     |
 
 ### Navigation
 
